@@ -33,13 +33,21 @@ String motorDirection = "DETENIDO";
 // --- Constantes y variables de control ---
 long vueltas = 0;
 const float ANGLE_SETPOINT = 180.0; // Objetivo: vertical
-const float MIN_ANGLE = ANGLE_SETPOINT - 45.0; // 135.0
-const float MAX_ANGLE = ANGLE_SETPOINT + 45.0; // 225.0
+float MIN_ANGLE = ANGLE_SETPOINT - 50.0; // 130.0
+float MAX_ANGLE = ANGLE_SETPOINT + 50.0; // 230.0
 
-const float MIN_POSITION = 10.0;
-const float MAX_POSITION = 85.0;
-const float MAX_POS_ADJUST = 2.0;
-const float ZONA_ALERTA = 5.0;
+float MIN_POSITION = 20.0;
+float MAX_POSITION = 80.0;
+float MAX_POS_ADJUST = 2.0;
+float ZONA_ALERTA = 10.0;
+float KP_POS = 0.5; // Ganancia del lazo de control de posición
+
+// --- Calibración y estado del sistema ---
+float angleOffset = 0.0;
+bool sistemaIniciado = false;
+bool calibradoAngulo = false;
+bool calibradoPosicion = false;
+bool menuMostrado = false;
 
 volatile int rev = 0;
 unsigned long lastMicros = 0;
@@ -111,8 +119,9 @@ void leerSensoresCada2ms() {
   if ((now - lastMicros) >= SAMPLE_PERIOD) {
     lastMicros = now;
     
-    // --- Sensor 1 (ángulo) ---
-    anguloSensor1 = map(as5600_1.readAngle(), 0, 4095, 3600, 0) / 10.0;
+    // --- Sensor 1 (ángulo) con offset de calibración ---
+    float rawAngle = map(as5600_1.readAngle(), 0, 4095, 3600, 0) / 10.0;
+    anguloSensor1 = fmod(rawAngle - angleOffset + 360.0, 360.0);
     
     // --- Sensor 2 (posición) ---
     int32_t rawPos = as5600_2.getCumulativePosition();
@@ -130,8 +139,8 @@ void leerSensoresCada2ms() {
 
 // ================= RED NEURONAL =================
 
-float angleControl(float currentAngle) {
-  error = ANGLE_SETPOINT - currentAngle;
+float angleControl(float currentAngle, float setpoint) {
+  error = setpoint - currentAngle;
   
   posicion.WriteArray_2D(0, 0, currentAngle / 1000.00);
   XI.WriteArray_2D(0, 0, error);
@@ -139,7 +148,7 @@ float angleControl(float currentAngle) {
   XI.WriteArray_2D(0, 2, error_1 - error_2);
   
   net.NORMALIZE_DATA(XI, 1000.00);
-  D.WriteArray_2D(0, 0, ANGLE_SETPOINT / 1000.00);
+  D.WriteArray_2D(0, 0, setpoint / 1000.00);
   
   net.TRAIN_NET_ONLINE(XI, D, posicion);
   Output = net.y.ReadArray_2D(net.y.GetRows() - 1, 0);
@@ -196,29 +205,187 @@ void updateDisplay() {
 }
 
 void printSystemStatus() {
-  Serial.print("error: "); Serial.print(error, 2);
-  Serial.print(" | error1: "); Serial.print(error_1, 2);
-  Serial.print(" | error2: "); Serial.print(error_2, 2);
+  Serial.print("Angulo: "); Serial.print(anguloSensor1, 1);
+  Serial.print(" | Posicion: "); Serial.print(posicionCm, 1); Serial.print(" cm");
   Serial.print(" | PWM: "); Serial.print(motorSpeed);
-  Serial.print(" | Output: "); Serial.print(Output, 2);
-  Serial.print(" | back: "); Serial.print(back, 2);
-  Serial.print(" | front: "); Serial.print(front, 2);
-  Serial.print(" | anguloSP: "); Serial.print(anguloSP, 2);
-  Serial.print(" | Estado: ");
+  Serial.print(" | Dir: "); Serial.println(motorDirection);
+}
+
+// ================= CALIBRACION =================
+
+void calibrarAngulo() {
+  Serial.println();
+  Serial.println("--- CALIBRACION DE ANGULO ---");
+  Serial.println("Asegure que el pendulo este vertical hacia ABAJO.");
+  Serial.println("Presione Enter para confirmar...");
   
-  if (!motorEnabled) {
-    Serial.println("Detenido");
-  } else if (!initialPositionReached) {
-    Serial.println("Control Inicial");
-  } else {
-    Serial.println("VERTICAL");
+  while (!Serial.available()) {
+    leerSensoresCada2ms();
+    updateDisplay();
+    delay(10);
   }
+  while (Serial.available()) { Serial.read(); } // Limpiar buffer
+  
+  // Leer ángulo crudo actual (sin offset)
+  angleOffset = map(as5600_1.readAngle(), 0, 4095, 3600, 0) / 10.0;
+  calibradoAngulo = true;
+  
+  Serial.print("Angulo calibrado. Offset almacenado: ");
+  Serial.print(angleOffset, 1);
+  Serial.println(" grados");
+  Serial.println("Posicion abajo = 0 grados, arriba = 180 grados.");
+  Serial.println();
+}
+
+void calibrarPosicion() {
+  Serial.println();
+  Serial.println("--- CALIBRACION DE POSICION ---");
+  Serial.println("Asegure que el carro este en la posicion inicial (0 cm).");
+  Serial.println("Presione Enter para confirmar...");
+  
+  while (!Serial.available()) {
+    leerSensoresCada2ms();
+    updateDisplay();
+    delay(10);
+  }
+  while (Serial.available()) { Serial.read(); } // Limpiar buffer
+  
+  // Resetear todo lo relacionado con posición
+  as5600_2.resetPosition();
+  as5600_2.resetCumulativePosition();
+  vueltas = 0;
+  lastRawPos = 0;
+  posicionAcumulada = 0;
+  posicionCm = 0.0;
+  calibradoPosicion = true;
+  
+  Serial.println("Posicion calibrada. Posicion actual: 0.0 cm");
+  Serial.println();
+}
+
+// ================= MENU SERIAL =================
+
+void mostrarMenu() {
+  Serial.println();
+  Serial.println("========================================");
+  Serial.println("         PENDULO INVERTIDO");
+  Serial.println("========================================");
+  Serial.println("Que desea hacer?");
+  Serial.print("  1. Calibrar angulo");
+  if (!calibradoAngulo) Serial.print("       (!) No calibrado");
+  Serial.println();
+  Serial.print("  2. Calibrar posicion");
+  if (!calibradoPosicion) Serial.print("     (!) No calibrado");
+  Serial.println();
+  Serial.print("  3. Iniciar rutina");
+  if (!calibradoAngulo || !calibradoPosicion) Serial.print("        (!) Calibre primero");
+  Serial.println();
+  Serial.println("  4. Configurar parametros");
+  Serial.println("========================================");
+  Serial.println("Ingrese opcion (1-4):");
+  menuMostrado = true;
+}
+
+void configurarParametros() {
+  while (true) {
+    Serial.println();
+    Serial.println("--- PARAMETROS DEL SISTEMA ---");
+    Serial.print("  a. MIN_ANGLE    = "); Serial.println(MIN_ANGLE, 1);
+    Serial.print("  b. MAX_ANGLE    = "); Serial.println(MAX_ANGLE, 1);
+    Serial.print("  c. MIN_POSITION = "); Serial.println(MIN_POSITION, 1);
+    Serial.print("  d. MAX_POSITION = "); Serial.println(MAX_POSITION, 1);
+    Serial.print("  e. ZONA_ALERTA  = "); Serial.println(ZONA_ALERTA, 1);
+    Serial.print("  f. KP_POS       = "); Serial.println(KP_POS, 2);
+    Serial.println("Ingrese letra del parametro a cambiar (o 'x' para volver):");
+    
+    while (!Serial.available()) {
+      leerSensoresCada2ms();
+      updateDisplay();
+      delay(10);
+    }
+    char opcion = Serial.read();
+    while (Serial.available()) { Serial.read(); } // Limpiar buffer
+    
+    if (opcion == 'x' || opcion == 'X') break;
+    
+    if (opcion >= 'a' && opcion <= 'f') {
+      Serial.print("Ingrese nuevo valor: ");
+      while (!Serial.available()) {
+        leerSensoresCada2ms();
+        updateDisplay();
+        delay(10);
+      }
+      String valorStr = Serial.readStringUntil('\n');
+      valorStr.trim();
+      float nuevoValor = valorStr.toFloat();
+      
+      switch (opcion) {
+        case 'a': MIN_ANGLE = nuevoValor; Serial.print("MIN_ANGLE = "); break;
+        case 'b': MAX_ANGLE = nuevoValor; Serial.print("MAX_ANGLE = "); break;
+        case 'c': MIN_POSITION = nuevoValor; Serial.print("MIN_POSITION = "); break;
+        case 'd': MAX_POSITION = nuevoValor; Serial.print("MAX_POSITION = "); break;
+        case 'e': ZONA_ALERTA = nuevoValor; Serial.print("ZONA_ALERTA = "); break;
+        case 'f': KP_POS = nuevoValor; Serial.print("KP_POS = "); break;
+      }
+      Serial.println(nuevoValor, 2);
+    } else {
+      Serial.println("Opcion no valida.");
+    }
+  }
+}
+
+// ================= RUTINAS DE MOVIMIENTO =================
+
+void llevarACentro() {
+  Serial.println("Moviendo carro a posicion central (45 cm)...");
+  motorSpeed = 280;
+  
+  while (true) {
+    leerSensoresCada2ms();
+    updateDisplay();
+    
+    if (posicionCm < 44.0) {
+      motorAdelante();
+      motorDirection = "ADELANTE";
+    } else if (posicionCm > 46.0) {
+      motorAtras();
+      motorDirection = "ATRAS";
+    } else {
+      break;
+    }
+  }
+  
+  motorFreno();
+  motorDirection = "DETENIDO";
+  Serial.print("Carro en posicion: ");
+  Serial.print(posicionCm, 1);
+  Serial.println(" cm");
+}
+
+void iniciarRutina() {
+  Serial.println();
+  Serial.println("--- INICIANDO RUTINA ---");
+  llevarACentro();
+  Serial.println("Estabilizando... espere 3 segundos.");
+  delay(3000);
+  
+  // Resetear estados de control
+  initialPositionReached = false;
+  motorEnabled = true;
+  error = 0.0;
+  error_1 = 0.0;
+  error_2 = 0.0;
+  sistemaIniciado = true;
+  
+  Serial.println("Control activo. Envie 's' por Serial para detener.");
+  Serial.println();
 }
 
 // ================= SETUP =================
 
 void setup() {
   Serial.begin(115200);
+  delay(2000); // Esperar conexión del monitor serial
 
   // Configuración de pines del motor
   pinMode(R_EN_PIN, OUTPUT);
@@ -281,27 +448,90 @@ void setup() {
   posicion.NewArray_2D(1, 1);
   posicion.ToinitializeArray_2D(0.0);
   net.LearningRate = 0.4; // 0.025 en el original comentado
-
-  // Llevar el péndulo al centro inicial
-  while (posicionCm < 45.0) {
-    leerSensoresCada2ms();
-    motorSpeed = 280;
-    motorAdelante();
-    motorDirection = "ADELANTE";
-  }
-  
-  motorFreno();
-  delay(5000);
 }
 
 // ================= LOOP PRINCIPAL =================
 
 void loop() {
-  // 1. Leer ángulo actual con decimales
+  
+  // ---- RAMA MENU: esperando órdenes del usuario ----
+  if (!sistemaIniciado) {
+    if (!menuMostrado) {
+      mostrarMenu();
+    }
+    
+    if (Serial.available()) {
+      char cmd = Serial.read();
+      while (Serial.available()) { Serial.read(); } // Limpiar buffer
+      
+      switch (cmd) {
+        case '1':
+          calibrarAngulo();
+          menuMostrado = false;
+          break;
+        case '2':
+          calibrarPosicion();
+          menuMostrado = false;
+          break;
+        case '3':
+          iniciarRutina();
+          break;
+        case '4':
+          configurarParametros();
+          menuMostrado = false;
+          break;
+      }
+    }
+    
+    // Mantener display activo en modo menú
+    leerSensoresCada2ms();
+    updateDisplay();
+    return; // No ejecutar control mientras estamos en menú
+  }
+  
+  // ---- RAMA CONTROL: sistema en ejecución ----
+  
+  // Verificar parada por Serial
+  if (Serial.available()) {
+    char cmd = Serial.read();
+    while (Serial.available()) { Serial.read(); }
+    if (cmd == 's' || cmd == 'S') {
+      Serial.println();
+      Serial.println(">>> Sistema detenido por usuario. <<<");
+      motorFreno();
+      motorDirection = "DETENIDO";
+      llevarACentro();
+      sistemaIniciado = false;
+      menuMostrado = false;
+      initialPositionReached = false;
+      return;
+    }
+  }
+  
+  // 1. Leer sensores
   leerSensoresCada2ms();
 
-  // 2. Verificar limites de seguridad
-  if (anguloSensor1 < MIN_ANGLE || anguloSensor1 > MAX_ANGLE) {
+  // 2. Verificar limites de posición (protección de carril)
+  if (posicionCm <= MIN_POSITION || posicionCm >= MAX_POSITION) {
+    Serial.println();
+    Serial.println(">>> Posicion fuera de rango! Recentrando... <<<");
+    motorFreno();
+    motorDirection = "DETENIDO";
+    llevarACentro();
+    Serial.println("Estabilizando... espere 3 segundos.");
+    delay(3000);
+    initialPositionReached = false;
+    motorEnabled = true;
+    error = 0.0;
+    error_1 = 0.0;
+    error_2 = 0.0;
+    Serial.println("Reiniciando control automaticamente.");
+    Serial.println();
+    return;
+  }
+
+  // 3. Verificar limites de ángulo (solo en control principal)
+  if (initialPositionReached && (anguloSensor1 < MIN_ANGLE || anguloSensor1 > MAX_ANGLE)) {
     motorEnabled = false;
     motorFreno();
     motorDirection = "DETENIDO";
@@ -309,33 +539,41 @@ void loop() {
     motorEnabled = true;
   }
 
-  // 3. Control solo si está habilitado
+  // 4. Control solo si está habilitado
   if (motorEnabled) {
     
-    // 4. Fase inicial: levantar péndulo
+    // 5. Fase inicial: levantar péndulo (swing-up)
     if (!initialPositionReached) {
+      // Factor de posición: reducir fuerza de swing-up cerca de los límites
+      float distFromCenter = abs(posicionCm - posicionSetpoint);
+      float maxDist = (MAX_POSITION - MIN_POSITION) / 2.0;
+      float posFactor = constrain(1.0 - (distFromCenter / maxDist), 0.1, 1.0);
+      
       if (anguloSensor1 > 0 && anguloSensor1 < MIN_ANGLE) {
         front = MIN_ANGLE - anguloSensor1;
         front = map(front, MIN_ANGLE, 0, 1, 0);
-        motorSpeed = 500 * front;
+        motorSpeed = 500 * front * posFactor;
         motorAtras();
       } 
       else if (anguloSensor1 > MAX_ANGLE && anguloSensor1 < 360) {
         back = anguloSensor1 - MAX_ANGLE;
         back = map(back, MAX_ANGLE, 0, 1, 0);
-        motorSpeed = 500 * back;
+        motorSpeed = 500 * back * posFactor;
         motorAdelante();
       }
       else {
         initialPositionReached = true; 
       }
     } 
-    // 5. Control Principal
+    // 6. Control Principal (Red Neuronal + lazo de posición)
     else {
-      float currentPos = posicionCm;
+      // Lazo maestro de posición: corrige el setpoint de ángulo
+      float posError = posicionSetpoint - posicionCm;
+      float posCorrection = KP_POS * posError;
+      posCorrection = constrain(posCorrection, -MAX_POS_ADJUST, MAX_POS_ADJUST);
+      float effectiveSetpoint = ANGLE_SETPOINT + posCorrection;
       
-      // Control de posición con Red Neuronal
-      motorSpeed = angleControl(anguloSensor1);
+      motorSpeed = angleControl(anguloSensor1, effectiveSetpoint);
       motorSpeed = map(motorSpeed, 0, 1000, 200, 800);
 
       error_2 = error_1;
@@ -355,10 +593,10 @@ void loop() {
     }
   }
 
-  // 10. Actualizar pantalla
+  // 7. Actualizar pantalla
   updateDisplay();
   
-  // 11. Mostrar estado por serial
+  // 8. Mostrar estado por serial
   printSystemStatus();
   
   delay(10);

@@ -1,1 +1,29 @@
-cenv
+# ── Entorno virtual Python ────────────────────────
+cenv/
+
+# ── macOS ─────────────────────────────────────────
+.DS_Store
+
+# ── Python ────────────────────────────────────────
+__pycache__/
+*.pyc
+
+# ── PlatformIO (build artifacts & dependencias) ──
+.pio/
+
+# ── Credenciales / configuración local ────────────
+SPISC/include/wifi_mqtt_config.h
+
+# ── IDE / editor ─────────────────────────────────
+.vscode/c_cpp_properties.json
+.vscode/launch.json
+.vscode/ipch/
+.vscode/.browse.c_cpp.db*
+
+# ── HMI ──────────────────────────────────────────
+hmi/backend/*.db
+hmi/frontend/node_modules/
+hmi/frontend/dist/
+
+# ── Logs ──────────────────────────────────────────
+*.log
