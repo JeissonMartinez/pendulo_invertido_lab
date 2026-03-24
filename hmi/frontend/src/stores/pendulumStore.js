@@ -23,6 +23,28 @@ export const usePendulumStore = defineStore('pendulum', () => {
     pwm: 0,
     direction: 'DETENIDO',
     ts: 0,
+    // Extendidos
+    pulsos_ir: 0,
+    vueltas_ir: 0,
+    rps_ir: 0,
+    rpm_ir: 0,
+    pos_ir_cm: 0,
+    rps_mag: 0,
+    rpm_mag: 0,
+    pos_mag_cm: 0,
+    angle_pend: 0,
+    vel_ang_pend: 0,
+    mpu_ax: 0,
+    mpu_ay: 0,
+    mpu_az: 0,
+    mpu_gx: 0,
+    mpu_gy: 0,
+    mpu_gz: 0,
+    mpu_pitch: 0,
+    mpu_roll: 0,
+    ls_start: false,
+    ls_end: false,
+    modo: '',
   })
 
   // ── Estado del sistema ───────────────────────
@@ -44,6 +66,19 @@ export const usePendulumStore = defineStore('pendulum', () => {
     pwm: [],
     cart_accel: [],
     rpm: [],
+    // Series extendidas
+    rpm_ir: [],
+    rps_ir: [],
+    pos_ir_cm: [],
+    rpm_mag: [],
+    pos_mag_cm: [],
+    angle_pend: [],
+    vel_ang_pend: [],
+    mpu_ax: [],
+    mpu_ay: [],
+    mpu_az: [],
+    mpu_pitch: [],
+    mpu_roll: [],
   })
 
   // ── Navegación multi-experimento ─────────────
@@ -59,6 +94,15 @@ export const usePendulumStore = defineStore('pendulum', () => {
   })
   const sweepResults = ref(null)
 
+  // ── Estado Lazo Abierto ──────────────────────
+  const openLoopState = ref({
+    status: 'OL_IDLE',
+    lastPosition: null,   // 'start' | 'end' | null
+    pwm: 500,
+    duration: 1.0,
+  })
+  const openLoopResults = ref([])
+
   // ── WebSocket send callback ──────────────────
   let _wsSend = null
 
@@ -72,16 +116,38 @@ export const usePendulumStore = defineStore('pendulum', () => {
 
   function _normalizarTelemetria(d) {
     return {
-      angle: d.angle ?? 0,
-      position: d.position ?? d.posicion ?? 0,
-      cart_accel: d.cart_accel ?? 0,
-      rpm: d.rpm ?? 0,
+      angle: d.angle ?? d.angle_pend ?? 0,
+      position: d.position ?? d.posicion ?? d.pos_mag_cm ?? 0,
+      cart_accel: d.cart_accel ?? d.mpu_ax ?? 0,
+      rpm: d.rpm ?? d.rpm_ir ?? 0,
       pwm: d.pwm ?? 0,
       direction: typeof d.direction === 'string'
         ? d.direction
         : (DIRECTION_MAP[d.direccion] ?? DIRECTION_MAP[d.direction] ?? 'DETENIDO'),
       ts: d.ts ?? 0,
-      // Preservar sweep embebido en telemetría
+      // Extendidos
+      pulsos_ir: d.pulsos_ir ?? 0,
+      vueltas_ir: d.vueltas_ir ?? 0,
+      rps_ir: d.rps_ir ?? 0,
+      rpm_ir: d.rpm_ir ?? 0,
+      pos_ir_cm: d.pos_ir_cm ?? 0,
+      rps_mag: d.rps_mag ?? 0,
+      rpm_mag: d.rpm_mag ?? 0,
+      pos_mag_cm: d.pos_mag_cm ?? 0,
+      angle_pend: d.angle_pend ?? d.angle ?? 0,
+      vel_ang_pend: d.vel_ang_pend ?? 0,
+      mpu_ax: d.mpu_ax ?? 0,
+      mpu_ay: d.mpu_ay ?? 0,
+      mpu_az: d.mpu_az ?? 0,
+      mpu_gx: d.mpu_gx ?? 0,
+      mpu_gy: d.mpu_gy ?? 0,
+      mpu_gz: d.mpu_gz ?? 0,
+      mpu_pitch: d.mpu_pitch ?? 0,
+      mpu_roll: d.mpu_roll ?? 0,
+      ls_start: d.ls_start ?? false,
+      ls_end: d.ls_end ?? false,
+      modo: d.modo ?? '',
+      // Preservar sweep embebido en telametría
       sweep: d.sweep ?? null,
     }
   }
@@ -124,6 +190,17 @@ export const usePendulumStore = defineStore('pendulum', () => {
       }
     } else if (tipo === 'estado') {
       estado.value = _normalizarEstado(datos)
+      // Actualizar openLoopState si estamos en modo OL
+      if (datos.modo === 'OPEN_LOOP' || datos.mode === 'OPEN_LOOP') {
+        const st = datos.estado ?? datos.state ?? 'OL_IDLE'
+        openLoopState.value.status = st
+        if (st === 'OL_READY') {
+          // Detectar posición
+          const ls = estado.value.limits
+          if (ls.start_switch) openLoopState.value.lastPosition = 'start'
+          else if (ls.end_switch) openLoopState.value.lastPosition = 'end'
+        }
+      }
     } else if (tipo === 'limites') {
       // Normalizar nombres de limit switches
       estado.value.limits = datos.limits ?? {
@@ -159,16 +236,38 @@ export const usePendulumStore = defineStore('pendulum', () => {
     h.pwm.push(datos.pwm ?? 0)
     h.cart_accel.push(datos.cart_accel ?? 0)
     h.rpm.push(datos.rpm ?? 0)
+    // Series extendidas
+    h.rpm_ir.push(datos.rpm_ir ?? 0)
+    h.rps_ir.push(datos.rps_ir ?? 0)
+    h.pos_ir_cm.push(datos.pos_ir_cm ?? 0)
+    h.rpm_mag.push(datos.rpm_mag ?? 0)
+    h.pos_mag_cm.push(datos.pos_mag_cm ?? 0)
+    h.angle_pend.push(datos.angle_pend ?? 0)
+    h.vel_ang_pend.push(datos.vel_ang_pend ?? 0)
+    h.mpu_ax.push(datos.mpu_ax ?? 0)
+    h.mpu_ay.push(datos.mpu_ay ?? 0)
+    h.mpu_az.push(datos.mpu_az ?? 0)
+    h.mpu_pitch.push(datos.mpu_pitch ?? 0)
+    h.mpu_roll.push(datos.mpu_roll ?? 0)
 
     // Recortar al tamaño máximo
     if (h.ts.length > BUFFER_SIZE) {
       const exceso = h.ts.length - BUFFER_SIZE
-      h.ts.splice(0, exceso)
-      h.angle.splice(0, exceso)
-      h.position.splice(0, exceso)
-      h.pwm.splice(0, exceso)
-      h.cart_accel.splice(0, exceso)
-      h.rpm.splice(0, exceso)
+      for (const key of Object.keys(h)) {
+        h[key].splice(0, exceso)
+      }
+    }
+
+    // Si está en modo OPEN_LOOP, agregar a resultados
+    if (datos.modo === 'OPEN_LOOP' || experimentoActivo.value === 'lazo_abierto') {
+      openLoopResults.value.push({
+        ts: ahora,
+        ...datos,
+      })
+      // Limitar a últimos 10000 registros
+      if (openLoopResults.value.length > 10000) {
+        openLoopResults.value.splice(0, openLoopResults.value.length - 10000)
+      }
     }
   }
 
@@ -208,6 +307,31 @@ export const usePendulumStore = defineStore('pendulum', () => {
     enviarComando('cmd_stop', {})
   }
 
+  // ── Acciones Lazo Abierto ───────────────────
+  function enviarComandoOpenLoop(action, pwm = 500, duration = 1.0) {
+    enviarComando('cmd_openloop', { action, pwm, duration })
+  }
+
+  function homeCarro() {
+    enviarComandoOpenLoop('home')
+  }
+
+  function endCarro() {
+    enviarComandoOpenLoop('end')
+  }
+
+  function enviarImpulso(pwm, duration) {
+    enviarComandoOpenLoop('impulse', pwm, duration)
+  }
+
+  function detenerMotor() {
+    enviarComandoOpenLoop('stop')
+  }
+
+  function limpiarResultadosOpenLoop() {
+    openLoopResults.value = []
+  }
+
   // ── Computed ─────────────────────────────────
   const estadoTexto = computed(() => estado.value.state)
   const modoTexto = computed(() => estado.value.mode)
@@ -227,6 +351,9 @@ export const usePendulumStore = defineStore('pendulum', () => {
     // Sweep
     sweepState,
     sweepResults,
+    // Open Loop
+    openLoopState,
+    openLoopResults,
     // Computed
     estadoTexto,
     modoTexto,
@@ -242,5 +369,12 @@ export const usePendulumStore = defineStore('pendulum', () => {
     configurar,
     iniciarBarrido,
     detenerBarrido,
+    // Open Loop actions
+    enviarComandoOpenLoop,
+    homeCarro,
+    endCarro,
+    enviarImpulso,
+    detenerMotor,
+    limpiarResultadosOpenLoop,
   }
 })

@@ -36,6 +36,11 @@
     <div v-if="store.wsConectado" class="latencia-badge">
       {{ latencia }}ms
     </div>
+
+    <!-- WiFi RSSI -->
+    <div v-if="store.estado.wifi_rssi" class="rssi-badge" :class="rssiClass" :title="'WiFi RSSI: ' + store.estado.wifi_rssi + ' dBm'">
+      {{ rssiIcon }} {{ store.estado.wifi_rssi }} dBm
+    </div>
   </div>
 </template>
 
@@ -70,6 +75,23 @@ const esp32Online = computed(() => {
 const esp32Title = computed(() => {
   if (esp32Online.value) return 'ESP32 publicando datos'
   return 'ESP32 sin datos recientes'
+})
+
+// WiFi RSSI
+const rssiClass = computed(() => {
+  const rssi = store.estado.wifi_rssi
+  if (rssi >= -50) return 'rssi-excelente'
+  if (rssi >= -65) return 'rssi-buena'
+  if (rssi >= -80) return 'rssi-regular'
+  return 'rssi-debil'
+})
+
+const rssiIcon = computed(() => {
+  const rssi = store.estado.wifi_rssi
+  if (rssi >= -50) return '▂▄▆█'
+  if (rssi >= -65) return '▂▄▆_'
+  if (rssi >= -80) return '▂▄__'
+  return '▂___'
 })
 
 function toggleConexion() {
@@ -170,4 +192,16 @@ function toggleConexion() {
   color: #757575;
   font-family: 'JetBrains Mono', 'Fira Code', monospace;
 }
+
+.rssi-badge {
+  font-size: 0.62rem;
+  padding: 2px 6px;
+  border-radius: 8px;
+  font-family: 'JetBrains Mono', monospace;
+  white-space: nowrap;
+}
+.rssi-excelente { background: #E8F5E9; color: #2E7D32; }
+.rssi-buena     { background: #F1F8E9; color: #558B2F; }
+.rssi-regular   { background: #FFF3E0; color: #E65100; }
+.rssi-debil     { background: #FFEBEE; color: #C62828; }
 </style>

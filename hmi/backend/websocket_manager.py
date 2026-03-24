@@ -90,6 +90,7 @@ class GestorWebSocket:
             "cmd_config": config.TOPICO_CMD_CONFIG,
             "cmd_stop": config.TOPICO_CMD_STOP,
             "cmd_sweep": config.TOPICO_CMD_SWEEP,
+            "cmd_openloop": config.TOPICO_CMD_OPENLOOP,
         }
 
         topico = mapa_topicos.get(tipo)

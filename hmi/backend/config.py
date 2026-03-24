@@ -24,6 +24,7 @@ TOPICO_CMD_CALIBRAR = "pendulum/cmd/calibrate"
 TOPICO_CMD_CONFIG = "pendulum/cmd/config"
 TOPICO_CMD_STOP = "pendulum/cmd/stop"
 TOPICO_CMD_SWEEP = "pendulum/cmd/sweep"
+TOPICO_CMD_OPENLOOP = "pendulum/cmd/openloop"
 
 # Resultados de barrido PWM
 TOPICO_SWEEP_RESULTS = "pendulum/sweep/results"

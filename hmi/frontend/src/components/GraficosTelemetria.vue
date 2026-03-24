@@ -2,7 +2,13 @@
   <div class="card">
     <div class="card-header flex-row justify-between items-center">
       <span>Gráficos de Telemetría</span>
-      <div class="flex-row gap-sm flex-wrap">
+      <div class="flex-row gap-sm flex-wrap items-center">
+        <select v-model="ventanaSeleccionada" class="select-ventana">
+          <option :value="0">Todo</option>
+          <option :value="10">10s</option>
+          <option :value="30">30s</option>
+          <option :value="60">60s</option>
+        </select>
         <button
           v-for="g in graficos"
           :key="g.id"
@@ -38,18 +44,34 @@ const store = usePendulumStore()
 
 const props = defineProps({
   graficosDefault: { type: Array, default: null },
+  ventanaTiempo: { type: Number, default: 0 }, // 0 = todo, en segundos
 })
 
 // ── Definición de gráficos ───────────────────
 const graficos = reactive([
-  { id: 'angle',      label: 'Ángulo',       unit: '°',     color: '#8C2981', visible: props.graficosDefault ? props.graficosDefault.includes('angle')      : true,  min: 0,   max: 360, setpoint: 180 },
-  { id: 'position',   label: 'Posición',     unit: 'cm',    color: '#B5367A', visible: props.graficosDefault ? props.graficosDefault.includes('position')   : true,  min: 0,   max: 95,  setpoint: 45.0 },
-  { id: 'pwm',        label: 'PWM',          unit: '0-1023',color: '#FC8961', visible: props.graficosDefault ? props.graficosDefault.includes('pwm')        : true,  min: 0,   max: 1023 },
-  { id: 'cart_accel', label: 'Aceleración',  unit: 'm/s²',  color: '#51127C', visible: props.graficosDefault ? props.graficosDefault.includes('cart_accel') : false, min: -5,  max: 5 },
-  { id: 'rpm',        label: 'RPM',          unit: 'rpm',   color: '#DE4968', visible: props.graficosDefault ? props.graficosDefault.includes('rpm')        : false, min: 0,   max: 600 },
+  { id: 'angle',       label: 'Ángulo',         unit: '°',     color: '#8C2981', visible: props.graficosDefault ? props.graficosDefault.includes('angle')       : true,  min: 0,   max: 360, setpoint: 180 },
+  { id: 'position',    label: 'Posición',       unit: 'cm',    color: '#B5367A', visible: props.graficosDefault ? props.graficosDefault.includes('position')    : true,  min: 0,   max: 95,  setpoint: 45.0 },
+  { id: 'pwm',         label: 'PWM',            unit: '0-1023',color: '#FC8961', visible: props.graficosDefault ? props.graficosDefault.includes('pwm')         : true,  min: 0,   max: 1023 },
+  { id: 'cart_accel',  label: 'Aceleración',    unit: 'm/s²',  color: '#51127C', visible: props.graficosDefault ? props.graficosDefault.includes('cart_accel')  : false, min: -5,  max: 5 },
+  { id: 'rpm',         label: 'RPM',            unit: 'rpm',   color: '#DE4968', visible: props.graficosDefault ? props.graficosDefault.includes('rpm')         : false, min: 0,   max: 600 },
+  // Series extendidas
+  { id: 'rpm_ir',       label: 'RPM IR',         unit: 'rpm',   color: '#E53935', visible: props.graficosDefault ? props.graficosDefault.includes('rpm_ir')      : false, min: 0,   max: 600 },
+  { id: 'rps_ir',       label: 'RPS IR',         unit: 'rev/s', color: '#D81B60', visible: props.graficosDefault ? props.graficosDefault.includes('rps_ir')      : false, min: 0,   max: 15 },
+  { id: 'pos_ir_cm',    label: 'Pos IR',         unit: 'cm',    color: '#8E24AA', visible: props.graficosDefault ? props.graficosDefault.includes('pos_ir_cm')   : false, min: 0,   max: 95 },
+  { id: 'rpm_mag',      label: 'RPM Mag',        unit: 'rpm',   color: '#5E35B1', visible: props.graficosDefault ? props.graficosDefault.includes('rpm_mag')     : false, min: 0,   max: 600 },
+  { id: 'pos_mag_cm',   label: 'Pos Mag',        unit: 'cm',    color: '#3949AB', visible: props.graficosDefault ? props.graficosDefault.includes('pos_mag_cm')  : false, min: 0,   max: 95 },
+  { id: 'angle_pend',   label: 'Ang. Pénd.',     unit: '°',     color: '#1E88E5', visible: props.graficosDefault ? props.graficosDefault.includes('angle_pend')  : false, min: 0,   max: 360, setpoint: 180 },
+  { id: 'vel_ang_pend', label: 'Vel. Ang.',      unit: '°/s',   color: '#00ACC1', visible: props.graficosDefault ? props.graficosDefault.includes('vel_ang_pend'): false, min: -500, max: 500 },
+  { id: 'mpu_ax',       label: 'MPU Ax',         unit: 'm/s²',  color: '#00897B', visible: props.graficosDefault ? props.graficosDefault.includes('mpu_ax')     : false, min: -15, max: 15 },
+  { id: 'mpu_ay',       label: 'MPU Ay',         unit: 'm/s²',  color: '#43A047', visible: props.graficosDefault ? props.graficosDefault.includes('mpu_ay')     : false, min: -15, max: 15 },
+  { id: 'mpu_az',       label: 'MPU Az',         unit: 'm/s²',  color: '#7CB342', visible: props.graficosDefault ? props.graficosDefault.includes('mpu_az')     : false, min: -15, max: 15 },
+  { id: 'mpu_pitch',    label: 'MPU Pitch',      unit: '°',     color: '#C0CA33', visible: props.graficosDefault ? props.graficosDefault.includes('mpu_pitch')  : false, min: -90, max: 90 },
+  { id: 'mpu_roll',     label: 'MPU Roll',       unit: '°',     color: '#FDD835', visible: props.graficosDefault ? props.graficosDefault.includes('mpu_roll')   : false, min: -90, max: 90 },
 ])
 
 const graficosVisibles = computed(() => graficos.filter(g => g.visible))
+
+const ventanaSeleccionada = ref(props.ventanaTiempo || 0)
 
 // ── Referencias DOM ──────────────────────────
 const refMap = {}
@@ -138,8 +160,17 @@ function actualizarGraficos() {
   const h = store.historial
   if (h.ts.length === 0) return
 
-  // Convertir timestamps a segundos
-  const tsSegs = h.ts.map(t => t / 1000)
+  // Aplicar ventana de tiempo
+  let startIdx = 0
+  const ventana = ventanaSeleccionada.value
+  if (ventana > 0) {
+    const cutoff = Date.now() - ventana * 1000
+    startIdx = h.ts.findIndex(t => t >= cutoff)
+    if (startIdx < 0) startIdx = h.ts.length
+  }
+
+  // Convertir timestamps a segundos (solo ventana visible)
+  const tsSegs = h.ts.slice(startIdx).map(t => t / 1000)
 
   for (const grafico of graficos) {
     const plot = plotMap[grafico.id]
@@ -148,7 +179,7 @@ function actualizarGraficos() {
     const valores = h[grafico.id]
     if (!valores) continue
 
-    const data = [tsSegs, valores]
+    const data = [tsSegs, valores.slice(startIdx)]
 
     // Agregar línea de setpoint si existe
     if (grafico.setpoint !== undefined) {
@@ -262,6 +293,21 @@ onMounted(async () => {
 }
 
 .btn-toggle:hover {
+  border-color: var(--md-primary);
+}
+
+.select-ventana {
+  padding: 2px 6px;
+  border: 1px solid var(--md-outline);
+  border-radius: 8px;
+  font-size: 0.65rem;
+  background: white;
+  cursor: pointer;
+  color: var(--md-on-surface-secondary);
+}
+
+.select-ventana:focus {
+  outline: none;
   border-color: var(--md-primary);
 }
 </style>

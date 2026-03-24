@@ -26,7 +26,29 @@ CREATE TABLE IF NOT EXISTS telemetria (
     cart_accel  REAL,
     rpm         REAL,
     pwm         INTEGER,
-    direction   TEXT
+    direction   TEXT,
+    -- Campos extendidos (sensores completos)
+    pulsos_ir   INTEGER,
+    vueltas_ir  REAL,
+    rps_ir      REAL,
+    rpm_ir      REAL,
+    pos_ir_cm   REAL,
+    rps_mag     REAL,
+    rpm_mag     REAL,
+    pos_mag_cm  REAL,
+    angle_pend  REAL,
+    vel_ang_pend REAL,
+    mpu_ax      REAL,
+    mpu_ay      REAL,
+    mpu_az      REAL,
+    mpu_gx      REAL,
+    mpu_gy      REAL,
+    mpu_gz      REAL,
+    mpu_pitch   REAL,
+    mpu_roll    REAL,
+    ls_start    INTEGER,
+    ls_end      INTEGER,
+    modo        TEXT
 );
 
 CREATE TABLE IF NOT EXISTS eventos (
@@ -90,6 +112,27 @@ class RegistroDatos:
             datos.get("rpm"),
             datos.get("pwm"),
             datos.get("direction"),
+            datos.get("pulsos_ir"),
+            datos.get("vueltas_ir"),
+            datos.get("rps_ir"),
+            datos.get("rpm_ir"),
+            datos.get("pos_ir_cm"),
+            datos.get("rps_mag"),
+            datos.get("rpm_mag"),
+            datos.get("pos_mag_cm"),
+            datos.get("angle_pend"),
+            datos.get("vel_ang_pend"),
+            datos.get("mpu_ax"),
+            datos.get("mpu_ay"),
+            datos.get("mpu_az"),
+            datos.get("mpu_gx"),
+            datos.get("mpu_gy"),
+            datos.get("mpu_gz"),
+            datos.get("mpu_pitch"),
+            datos.get("mpu_roll"),
+            1 if datos.get("ls_start") else 0,
+            1 if datos.get("ls_end") else 0,
+            datos.get("modo"),
         ))
         if len(self._buffer_telemetria) >= config.REGISTRO_BATCH_SIZE:
             await self._flush_telemetria()
@@ -120,7 +163,13 @@ class RegistroDatos:
         self._buffer_telemetria.clear()
         await self._db.executemany(
             "INSERT INTO telemetria (ts_servidor, ts_esp32, angle, position, "
-            "cart_accel, rpm, pwm, direction) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            "cart_accel, rpm, pwm, direction, "
+            "pulsos_ir, vueltas_ir, rps_ir, rpm_ir, pos_ir_cm, "
+            "rps_mag, rpm_mag, pos_mag_cm, "
+            "angle_pend, vel_ang_pend, "
+            "mpu_ax, mpu_ay, mpu_az, mpu_gx, mpu_gy, mpu_gz, mpu_pitch, mpu_roll, "
+            "ls_start, ls_end, modo) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             lote,
         )
         await self._db.commit()
@@ -165,12 +214,24 @@ class RegistroDatos:
         if not self._db:
             return []
         cursor = await self._db.execute(
-            "SELECT ts_servidor, ts_esp32, angle, position, cart_accel, rpm, pwm, direction "
+            "SELECT ts_servidor, ts_esp32, angle, position, cart_accel, rpm, pwm, direction, "
+            "pulsos_ir, vueltas_ir, rps_ir, rpm_ir, pos_ir_cm, "
+            "rps_mag, rpm_mag, pos_mag_cm, "
+            "angle_pend, vel_ang_pend, "
+            "mpu_ax, mpu_ay, mpu_az, mpu_gx, mpu_gy, mpu_gz, mpu_pitch, mpu_roll, "
+            "ls_start, ls_end, modo "
             "FROM telemetria WHERE ts_servidor BETWEEN ? AND ? "
             "ORDER BY ts_servidor LIMIT ?",
             (desde, hasta, limite),
         )
-        columnas = ["ts_servidor", "ts_esp32", "angle", "position", "cart_accel", "rpm", "pwm", "direction"]
+        columnas = [
+            "ts_servidor", "ts_esp32", "angle", "position", "cart_accel", "rpm", "pwm", "direction",
+            "pulsos_ir", "vueltas_ir", "rps_ir", "rpm_ir", "pos_ir_cm",
+            "rps_mag", "rpm_mag", "pos_mag_cm",
+            "angle_pend", "vel_ang_pend",
+            "mpu_ax", "mpu_ay", "mpu_az", "mpu_gx", "mpu_gy", "mpu_gz", "mpu_pitch", "mpu_roll",
+            "ls_start", "ls_end", "modo",
+        ]
         return [dict(zip(columnas, fila)) for fila in await cursor.fetchall()]
 
     async def consultar_sesiones(self, limite: int = 50) -> list[dict]:

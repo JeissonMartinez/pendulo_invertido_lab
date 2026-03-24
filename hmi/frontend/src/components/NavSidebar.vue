@@ -42,6 +42,7 @@ const expandida = ref(false)
 
 const tabs = [
   { id: 'rango_pwm', label: 'Rango Operativo PWM', icon: '⚡' },
+  { id: 'lazo_abierto', label: 'Lazo Abierto', icon: '🔓' },
   // Futuras pestañas:
   // { id: 'control_pid', label: 'Control PID', icon: '🎯' },
   // { id: 'control_neural', label: 'Red Neuronal', icon: '🧠' },

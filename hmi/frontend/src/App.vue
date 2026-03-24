@@ -25,8 +25,14 @@
       <!-- Contenido dinámico según pestaña activa -->
       <div class="app-content">
         <TabRangoPWM v-if="store.experimentoActivo === 'rango_pwm'" />
+        <TabLazoAbierto v-if="store.experimentoActivo === 'lazo_abierto'" />
       </div>
     </div>
+
+    <!-- ═══════════ FOOTER ═══════════ -->
+    <footer class="app-footer">
+      Creado por: Ing. MsC. (c) Jeisson Harvey Martínez Flórez — Docente | Programa: Ingeniería Mecatrónica | Universidad de Pamplona — Villa del Rosario | Todos los derechos reservados — 2026
+    </footer>
   </div>
 </template>
 
@@ -38,6 +44,7 @@ import { useWebSocket } from './composables/useWebSocket'
 import PanelConexion from './components/PanelConexion.vue'
 import NavSidebar from './components/NavSidebar.vue'
 import TabRangoPWM from './components/tabs/TabRangoPWM.vue'
+import TabLazoAbierto from './components/tabs/TabLazoAbierto.vue'
 
 const store = usePendulumStore()
 const { latencia, reconectarManual } = useWebSocket()
@@ -71,6 +78,16 @@ function onEmergencia() {
   flex: 1;
   overflow-y: auto;
   overflow-x: hidden;
+}
+
+.app-footer {
+  background: #1B0533;
+  color: #9B7DB8;
+  text-align: center;
+  font-size: 0.62rem;
+  padding: 6px 16px;
+  line-height: 1.4;
+  flex-shrink: 0;
 }
 
 .header-derecha {

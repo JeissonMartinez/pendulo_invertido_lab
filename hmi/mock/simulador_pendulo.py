@@ -228,6 +228,18 @@ class SimuladorPendulo:
         # Millis simulado
         self._t0 = time.time()
 
+        # ── Lazo abierto ──────────────────────────
+        self._ol_state = "OL_IDLE"    # OL_IDLE, OL_HOMING_START, OL_HOMING_END, OL_READY, OL_IMPULSE_RUNNING, OL_STOPPED
+        self._ol_pwm = 0
+        self._ol_duration = 0.0
+        self._ol_start_time = 0.0
+        self._ol_direction = 0         # 1=adelante, -1=atrás
+
+        # Sensores sintéticos extra
+        self._pulse_count = 0
+        self._global_position = 0      # pulsos acumulados
+        self._vueltas = 0.0
+
     @property
     def millis(self) -> int:
         return int((time.time() - self._t0) * 1000)
@@ -262,6 +274,12 @@ class SimuladorPendulo:
             self.modelo.step(DT, 0.0)
             if abs(self.modelo.x_d) < 0.1:
                 self.estado = "IDLE"
+
+        # Tick lazo abierto (paralelo al estado principal)
+        self._tick_open_loop()
+
+        # Actualizar contadores de encoder sintético
+        self._update_synthetic_sensors()
 
         # Agregar ruido de sensor
         self._agregar_ruido()
@@ -369,6 +387,60 @@ class SimuladorPendulo:
         self.modelo.pwm = abs(int(salida))
         self.modelo.direction = "ADELANTE" if salida > 0 else "ATRAS" if salida < 0 else "DETENIDO"
 
+    # ── Lazo Abierto tick ─────────────────────────
+    def _tick_open_loop(self) -> None:
+        if self._ol_state == "OL_HOMING_START":
+            # Mover carro hacia inicio
+            self.modelo.step(DT, -0.3)
+            if self.modelo.limit_start:
+                self.modelo.x_d = 0
+                self._ol_state = "OL_READY"
+                logger.info("OL: Homing START completado")
+            elif time.time() - self._ol_start_time > 30:
+                self._ol_state = "OL_STOPPED"
+                logger.warning("OL: Timeout homing start")
+
+        elif self._ol_state == "OL_HOMING_END":
+            self.modelo.step(DT, 0.3)
+            if self.modelo.limit_end:
+                self.modelo.x_d = 0
+                self._ol_state = "OL_READY"
+                logger.info("OL: Homing END completado")
+            elif time.time() - self._ol_start_time > 30:
+                self._ol_state = "OL_STOPPED"
+                logger.warning("OL: Timeout homing end")
+
+        elif self._ol_state == "OL_IMPULSE_RUNNING":
+            fuerza = (self._ol_pwm / 1023.0) * self._ol_direction
+            self.modelo.step(DT, fuerza)
+            self.modelo.pwm = self._ol_pwm
+            self.modelo.direction = "ADELANTE" if self._ol_direction > 0 else "ATRAS"
+            elapsed = time.time() - self._ol_start_time
+            if elapsed >= self._ol_duration:
+                self.modelo.pwm = 0
+                self.modelo.direction = "DETENIDO"
+                self.modelo.x_d *= 0.3
+                self._ol_state = "OL_STOPPED"
+                logger.info("OL: Impulso completado (%.2fs)", elapsed)
+            elif self.modelo.limit_start or self.modelo.limit_end:
+                self.modelo.pwm = 0
+                self.modelo.direction = "DETENIDO"
+                self.modelo.x_d = 0
+                self._ol_state = "OL_STOPPED"
+                logger.info("OL: Impulso detenido por limit switch")
+
+    def _update_synthetic_sensors(self) -> None:
+        """Actualiza contadores de encoder IR y posición magnética sintéticos."""
+        speed_cm_s = abs(self.modelo.x_d)
+        pulses_per_cm = 1.0 / 0.0504  # ~19.84 pulses/cm
+        delta_pulses = speed_cm_s * DT * pulses_per_cm
+        self._pulse_count += delta_pulses
+        if self.modelo.x_d >= 0:
+            self._global_position += delta_pulses
+        else:
+            self._global_position -= delta_pulses
+        self._vueltas = self._pulse_count / 40.0
+
     def _agregar_ruido(self) -> None:
         """Ruido de sensor realista."""
         self._noise_angle = random.gauss(0, 0.5)     # ±0.5° ruido ángulo
@@ -382,19 +454,73 @@ class SimuladorPendulo:
 
     # ── Generadores de payload MQTT ───────────────
     def payload_telemetria(self) -> dict:
+        noise_a = getattr(self, "_noise_angle", 0)
+        noise_p = getattr(self, "_noise_pos", 0)
+        noise_acc = getattr(self, "_noise_accel", 0)
+
+        pos_cm = self.modelo.position_cm + noise_p
+        angle_deg = self.modelo.angle_deg + noise_a
+        speed_cm_s = self.modelo.x_d
+        rps_ir = abs(speed_cm_s) / (0.0504 * 40) if abs(speed_cm_s) > 0.01 else 0
+        rpm_ir = rps_ir * 60
+        theta_d_deg = math.degrees(self.modelo.theta_d)
+
+        # MPU6050 synthetic: accel from cart + gravity component
+        mpu_ax = round(self.modelo.cart_accel + noise_acc, 4)
+        mpu_ay = round(random.gauss(0, 0.02), 4)
+        mpu_az = round(9.81 + random.gauss(0, 0.03), 4)
+        mpu_gx = round(random.gauss(0, 0.5), 2)
+        mpu_gy = round(random.gauss(0, 0.5), 2)
+        mpu_gz = round(random.gauss(0, 0.5), 2)
+        mpu_pitch = round(math.degrees(math.atan2(mpu_ax, mpu_az)) + random.gauss(0, 0.3), 2)
+        mpu_roll = round(math.degrees(math.atan2(mpu_ay, mpu_az)) + random.gauss(0, 0.3), 2)
+
+        dir_int = 0
+        if self.modelo.direction == "ADELANTE":
+            dir_int = 1
+        elif self.modelo.direction == "ATRAS":
+            dir_int = -1
+
         return {
-            "angle": round(self.modelo.angle_deg + getattr(self, "_noise_angle", 0), 2),
-            "position": round(self.modelo.position_cm + getattr(self, "_noise_pos", 0), 2),
-            "cart_accel": round(self.modelo.cart_accel + getattr(self, "_noise_accel", 0), 3),
-            "rpm": round(self.modelo.rpm, 1),
+            # Legacy fields (backward compatible)
+            "angle": round(angle_deg, 2),
+            "position": round(pos_cm, 2),
+            "cart_accel": round(self.modelo.cart_accel + noise_acc, 3),
+            "rpm": round(rpm_ir, 1),
             "pwm": self.modelo.pwm,
-            "direction": self.modelo.direction,
+            "direction": dir_int,
+            "posicion": round(pos_cm, 2),
+            "direccion": dir_int,
             "ts": self.millis,
+            # Extended sensor fields
+            "pulsos_ir": int(self._pulse_count),
+            "vueltas_ir": round(self._vueltas, 3),
+            "rps_ir": round(rps_ir, 3),
+            "rpm_ir": round(rpm_ir, 1),
+            "pos_ir_cm": round(self._global_position * 0.0504, 2),
+            "rps_mag": round(rps_ir * 0.95, 3),  # slightly different
+            "rpm_mag": round(rpm_ir * 0.95, 1),
+            "pos_mag_cm": round(pos_cm, 2),
+            "angle_pend": round(angle_deg, 2),
+            "vel_ang_pend": round(theta_d_deg + random.gauss(0, 0.3), 2),
+            "mpu_ax": mpu_ax,
+            "mpu_ay": mpu_ay,
+            "mpu_az": mpu_az,
+            "mpu_gx": mpu_gx,
+            "mpu_gy": mpu_gy,
+            "mpu_gz": mpu_gz,
+            "mpu_pitch": mpu_pitch,
+            "mpu_roll": mpu_roll,
+            "ls_start": self.modelo.limit_start,
+            "ls_end": self.modelo.limit_end,
+            "modo": self._ol_state if self._ol_state != "OL_IDLE" else self.modo,
         }
 
     def payload_estado(self) -> dict:
+        # Report OL state when in open loop mode
+        state_report = self._ol_state if self._ol_state != "OL_IDLE" else self.estado
         return {
-            "state": self.estado,
+            "state": state_report,
             "mode": self.modo,
             "limits": {
                 "start_switch": self.modelo.limit_start,
@@ -459,10 +585,46 @@ class SimuladorPendulo:
             param = datos.get("param", "")
             valor = datos.get("value", 0)
             logger.info("Config recibida: %s = %s", param, valor)
-            # El mock no aplica parámetros realmente, solo los loguea
+
+        elif cmd == "openloop":
+            self._procesar_openloop(datos)
 
         else:
             logger.warning("Comando desconocido: %s", cmd)
+
+    def _procesar_openloop(self, datos: dict) -> None:
+        action = datos.get("action", "")
+
+        if action == "home":
+            self._ol_state = "OL_HOMING_START"
+            self._ol_start_time = time.time()
+            logger.info("OL: Homing → START")
+
+        elif action == "end":
+            self._ol_state = "OL_HOMING_END"
+            self._ol_start_time = time.time()
+            logger.info("OL: Homing → END")
+
+        elif action == "impulse":
+            pwm = max(200, min(1023, datos.get("pwm", 500)))
+            duration = max(0.1, min(3.0, datos.get("duration", 1.0)))
+            self._ol_pwm = pwm
+            self._ol_duration = duration
+            # Determine direction based on current position
+            if self.modelo.limit_start or self.modelo.position_cm < 10:
+                self._ol_direction = 1   # adelante
+            else:
+                self._ol_direction = -1  # atrás
+            self._ol_state = "OL_IMPULSE_RUNNING"
+            self._ol_start_time = time.time()
+            logger.info("OL: Impulso PWM=%d dur=%.1fs dir=%d", pwm, duration, self._ol_direction)
+
+        elif action == "stop":
+            self._ol_state = "OL_STOPPED"
+            self.modelo.pwm = 0
+            self.modelo.direction = "DETENIDO"
+            self.modelo.x_d *= 0.1
+            logger.info("OL: Stop")
 
 
 # ══════════════════════════════════════════════════

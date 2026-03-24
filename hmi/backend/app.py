@@ -21,6 +21,7 @@ from .modelos import (
     ComandoConfig,
     ComandoStop,
     ComandoSweep,
+    ComandoOpenLoop,
 )
 from .mqtt_cliente import ClienteMQTT
 from .websocket_manager import GestorWebSocket
@@ -158,4 +159,10 @@ async def comando_stop():
 @app.post("/api/comando/sweep")
 async def comando_sweep(cmd: ComandoSweep):
     ok = await mqtt.publicar(config.TOPICO_CMD_SWEEP, cmd.model_dump())
+    return {"enviado": ok}
+
+
+@app.post("/api/comando/openloop")
+async def comando_openloop(cmd: ComandoOpenLoop):
+    ok = await mqtt.publicar(config.TOPICO_CMD_OPENLOOP, cmd.model_dump())
     return {"enviado": ok}

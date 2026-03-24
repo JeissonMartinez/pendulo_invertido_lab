@@ -28,6 +28,17 @@ class EstadoSistema(str, Enum):
     BACK_RUNNING = "BACK_RUNNING"
     SHOW_RESULTS = "SHOW_RESULTS"
     WAIT_REINICIAR = "WAIT_REINICIAR"
+    # Estados del modo Lazo Abierto
+    OL_IDLE = "OL_IDLE"
+    OL_HOMING_START = "OL_HOMING_START"
+    OL_HOMING_END = "OL_HOMING_END"
+    OL_READY = "OL_READY"
+    OL_IMPULSE_RUNNING = "OL_IMPULSE_RUNNING"
+    OL_STOPPED = "OL_STOPPED"
+    # Intermedios de barrido
+    SETTLE_END = "SETTLE_END"
+    SETTLE_START = "SETTLE_START"
+    PAUSE_AT_START = "PAUSE_AT_START"
 
 
 class ModoControl(str, Enum):
@@ -40,6 +51,7 @@ class ModoControl(str, Enum):
     MRAC = "MRAC"
     MPC = "MPC"
     SWEEP_PWM = "SWEEP_PWM"
+    OPEN_LOOP = "OPEN_LOOP"
 
 
 class DireccionMotor(str, Enum):
@@ -59,14 +71,52 @@ class TipoCalibracion(str, Enum):
 # ══════════════════════════════════════════════════
 
 class Telemetria(BaseModel):
-    """Paquete de telemetría a ~50 Hz."""
-    angle: float = Field(..., description="Ángulo del péndulo (grados, 180=vertical)")
-    position: float = Field(..., description="Posición del carro (cm)")
-    cart_accel: float = Field(0.0, description="Aceleración del carro m/s² (MPU6050)")
+    """Paquete de telemetría a ~50 Hz — Todos los sensores."""
+    # Campos de compatibilidad
+    angle: float = Field(0.0, description="Ángulo del péndulo (grados)")
+    position: float = Field(0.0, description="Posición del carro (cm)")
+    cart_accel: float = Field(0.0, description="Aceleración del carro m/s²")
     rpm: float = Field(0.0, description="RPM del motor (encoder IR)")
     pwm: int = Field(0, description="Duty cycle PWM actual (0-1023)")
-    direction: DireccionMotor = DireccionMotor.DETENIDO
-    ts: int = Field(..., description="Timestamp ESP32 (millis)")
+    direction: int = Field(0, description="Dirección motor: -1/0/1")
+    ts: int = Field(0, description="Timestamp ESP32 (millis)")
+
+    # Encoder IR (HC-020K)
+    pulsos_ir: int = Field(0)
+    vueltas_ir: float = Field(0.0)
+    rps_ir: float = Field(0.0)
+    rpm_ir: float = Field(0.0)
+    pos_ir_cm: float = Field(0.0)
+
+    # AS5600 #2 — Posición magnética del carro
+    rps_mag: float = Field(0.0)
+    rpm_mag: float = Field(0.0)
+    pos_mag_cm: float = Field(0.0)
+
+    # AS5600 #1 — Ángulo péndulo
+    angle_pend: float = Field(0.0)
+    vel_ang_pend: float = Field(0.0)
+
+    # MPU6050
+    mpu_ax: float = Field(0.0)
+    mpu_ay: float = Field(0.0)
+    mpu_az: float = Field(0.0)
+    mpu_gx: float = Field(0.0)
+    mpu_gy: float = Field(0.0)
+    mpu_gz: float = Field(0.0)
+    mpu_pitch: float = Field(0.0)
+    mpu_roll: float = Field(0.0)
+
+    # Limit switches
+    ls_start: bool = Field(False)
+    ls_end: bool = Field(False)
+
+    # Modo del firmware
+    modo: str = Field("", description="Modo activo del firmware")
+
+    # Datos de barrido (compatibilidad)
+    posicion: float = Field(0.0)
+    direccion: int = Field(0)
 
 
 class EstadoLimites(BaseModel):
@@ -117,6 +167,18 @@ class ComandoConfig(BaseModel):
 class ComandoStop(BaseModel):
     """Parada de emergencia."""
     pass
+
+
+class ComandoSweep(BaseModel):
+    """Comando para el barrido PWM."""
+    action: str = Field(..., description="'start', 'stop', 'reiniciar'")
+
+
+class ComandoOpenLoop(BaseModel):
+    """Comando para el modo Lazo Abierto."""
+    action: str = Field(..., description="'home', 'end', 'impulse', 'stop'")
+    pwm: int = Field(500, ge=200, le=1023)
+    duration: float = Field(1.0, ge=0.1, le=3.0)
 
 
 class ComandoSweep(BaseModel):
