@@ -52,6 +52,7 @@ export function useWebSocket() {
 
     ws.onclose = () => {
       store.wsConectado = false
+      store.mqttConectado = false
       store.setWsSend(null)
       programarReconexion()
     }

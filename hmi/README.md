@@ -664,6 +664,35 @@ El backend no está recibiendo datos MQTT.
 - ¿Hay mensajes fluyendo? → `mosquitto_sub -t "pendulum/#" -v`
 - ¿El backend arrancó sin errores de MQTT? → Revisar logs de uvicorn
 
+### El indicador MQTT se pone en rojo al iniciar una rutina (barrido o lazo abierto)
+
+Este fue un bug resuelto en v0.4.0. Si vuelve a ocurrir, diagnosticar con estos pasos:
+
+1. **Verificar que los mensajes llegan al broker:**
+   ```bash
+   mosquitto_sub -t "pendulum/#" -v
+   ```
+   Si ves telemetría fluyendo, el ESP32 está bien. El problema está en la cadena Backend → Frontend.
+
+2. **Verificar que el cliente MQTT del backend sigue vivo:**
+   ```python
+   # test_ws.py — ejecutar desde raíz del proyecto
+   import asyncio, json, websockets
+   async def main():
+       async with websockets.connect("ws://localhost:8000/ws") as ws:
+           msg = await asyncio.wait_for(ws.recv(), timeout=4.0)
+           print(json.loads(msg).get("tipo"))
+   asyncio.run(main())
+   ```
+   ```bash
+   cenv/bin/python3 -u test_ws.py
+   ```
+   Si da timeout, el cliente MQTT del backend se cayó. **Reiniciar el backend** (matar uvicorn y lanzarlo de nuevo).
+
+3. **Causas comunes:**
+   - Una excepción no capturada en `_procesar_mensaje()` (e.g., payload malformado, error de SQLite) mataba el loop MQTT del backend permanentemente.
+   - Esto se corrigió envolviendo cada mensaje en `try/except` dentro de `mqtt_cliente.py`.
+
 ### El indicador ESP32 está en rojo/naranja
 
 No se reciben datos del ESP32 o están retrasados.
@@ -696,6 +725,34 @@ pkill -f uvicorn
 ---
 
 ## Historial de cambios
+
+### v0.4.0 — Estabilización de conexión MQTT y firmware modular (2026-03-24)
+
+**Bug crítico resuelto: "MQTT se desconecta al iniciar rutinas"**
+
+Al arrancar cualquier rutina (barrido PWM o lazo abierto), el frontend mostraba el indicador MQTT en rojo. El diagnóstico reveló que el ESP32 nunca perdía la conexión — los mensajes seguían llegando al broker Mosquitto correctamente. El problema estaba en el **backend Python**:
+
+- `mqtt_cliente.py` — El loop `_loop_conexion()` solo capturaba `aiomqtt.MqttError` y `asyncio.CancelledError`. Cualquier otra excepción (de `aiosqlite`, `orjson`, o WebSocket broadcast) propagaba y **mataba el loop MQTT permanentemente**, sin reconexión. Solución: `try/except Exception` alrededor de cada `_procesar_mensaje()` y en el loop externo.
+- `websocket_manager.py` — Un error en `_procesar_comando()` podía crashear el listener WebSocket completo del cliente, desconectando el frontend. Solución: `try/except Exception` alrededor de `_procesar_comando()`.
+
+**Mejoras de robustez en firmware ESP32:**
+
+- WiFi TX power aumentado de 8.5 dBm a **15 dBm** (el brownout detector ya estaba desactivado, no había razón para la restricción). Mejora el margen de señal contra interferencia EMI del motor.
+- `WiFi.setSleep(false)` — desactiva modem-sleep para mantener la conexión WiFi permanentemente activa.
+- I2C en **Fast Mode (400 kHz)** — reduce el bloqueo de la OLED SSD1306 de ~92 ms a ~23 ms por frame, dejando más tiempo de CPU al stack WiFi.
+- OLED actualización reducida de 5 Hz a **2 Hz** — menos bloqueo I2C.
+- `yield()` insertado tras lectura de sensores en el loop principal, dando tiempo al stack WiFi.
+- `_publishResults()` del barrido PWM reescrito: antes usaba un loop bloqueante con `delay(20)` × N registros (hasta 20 s sin llamar `_mqttClient.loop()`). Ahora usa un **estado no-bloqueante** que publica un registro por iteración del loop principal.
+
+**Otros bugs corregidos (sesión de debugging completa):**
+
+- **Conflicto I2C** — `sensors_i2c.cpp` creaba objetos `TwoWire` locales mientras `display_oled.cpp` usaba el global `Wire1`, causando cuelgues. Corregido para usar buses I2C globales `Wire`/`Wire1`.
+- **Brownout ESP32** — La radio WiFi causaba un reset loop por exceso de corriente. Desactivado el brownout detector + reducida potencia TX (ahora revertida a 15 dBm).
+- **Reconexión MQTT sin re-suscripción** — PubSubClient pierde las suscripciones al reconectar. Añadido array de tópicos + `_resubscribe()` en `MqttBridge`.
+- **Watchdog MQTT en frontend** — Añadido timeout de 5 s sin mensajes → `mqttConectado = false`. También se resetea `mqttConectado` al cerrarse el WebSocket.
+- **Safety timeout mataba el motor** — `markMqttActivity()` solo se llamaba al recibir comandos (esporádicos). Después de 2 s sin comandos, `Safety::check()` llamaba `Motor::freno()` en cada iteración del loop. Corregido: `markMqttActivity()` se llama continuamente mientras `MqttComm::isConnected()` sea `true`.
+- **Comandos descartados en MODE_IDLE** — Los comandos a `cmd_sweep`/`cmd_openloop` eran ignorados si el firmware estaba en IDLE. Añadida lógica de auto-switch de modo antes de enrutar los comandos.
+- **Campo `ol_state` en telemetría** — Añadido al `TelemetryPacket` y a `publishTelemetry()` para que el frontend conozca el sub-estado del modo activo.
 
 ### v0.3.0 — Paleta Magma, animación del péndulo y correcciones (2026-03-23)
 

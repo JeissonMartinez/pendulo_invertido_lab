@@ -105,6 +105,15 @@ export const usePendulumStore = defineStore('pendulum', () => {
 
   // ── WebSocket send callback ──────────────────
   let _wsSend = null
+  let _mqttWatchdog = null
+  const MQTT_TIMEOUT_MS = 5000  // 5s sin mensajes → MQTT desconectado
+
+  function _resetMqttWatchdog() {
+    if (_mqttWatchdog) clearTimeout(_mqttWatchdog)
+    _mqttWatchdog = setTimeout(() => {
+      mqttConectado.value = false
+    }, MQTT_TIMEOUT_MS)
+  }
 
   function setWsSend(fn) {
     _wsSend = fn
@@ -173,6 +182,7 @@ export const usePendulumStore = defineStore('pendulum', () => {
 
     // Si recibimos cualquier dato, el broker MQTT está activo
     mqttConectado.value = true
+    _resetMqttWatchdog()
 
     if (tipo === 'telemetria') {
       const norm = _normalizarTelemetria(datos)

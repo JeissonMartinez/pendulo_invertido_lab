@@ -12,6 +12,7 @@ MqttBridge::MqttBridge()
     , _callback(nullptr)
     , _lastReconnectAttempt(0)
     , _reconnectInterval(1000)
+    , _subCount(0)
 {
     _instance = this;
 }
@@ -62,6 +63,10 @@ bool MqttBridge::publish(const char* topic, const char* payload) {
 }
 
 bool MqttBridge::subscribe(const char* topic) {
+    // Store topic for re-subscribe on reconnect
+    if (_subCount < MAX_SUBS) {
+        _subTopics[_subCount++] = topic;
+    }
     if (!_mqttClient.connected()) return false;
     return _mqttClient.subscribe(topic);
 }
@@ -86,6 +91,8 @@ int MqttBridge::getWifiRssi() const {
 bool MqttBridge::_connectWifi() {
     Serial.printf("[MqttBridge] Conectando a WiFi '%s'...\n", WIFI_SSID);
     WiFi.mode(WIFI_STA);
+    WiFi.setSleep(false);                  // Desactivar modem-sleep para mantener conexión estable
+    WiFi.setTxPower(WIFI_POWER_15dBm);     // TX 15 dBm (brownout detector desactivado)
     WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
 
     unsigned long start = millis();
@@ -109,11 +116,18 @@ bool MqttBridge::_connectMqtt() {
 
     if (_mqttClient.connect(MQTT_CLIENT_ID)) {
         Serial.println("[MqttBridge] MQTT conectado");
+        _resubscribe();
         return true;
     }
 
     Serial.printf("[MqttBridge] MQTT fallo, rc=%d\n", _mqttClient.state());
     return false;
+}
+
+void MqttBridge::_resubscribe() {
+    for (uint8_t i = 0; i < _subCount; i++) {
+        _mqttClient.subscribe(_subTopics[i]);
+    }
 }
 
 // ── Callback estático → instancia ────────────────

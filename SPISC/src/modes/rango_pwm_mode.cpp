@@ -74,6 +74,7 @@ static volatile bool _cmdStart     = false;
 static volatile bool _cmdStop      = false;
 static volatile bool _cmdReiniciar = false;
 static bool _stopPending = false;
+static bool _pubStarted = false;
 
 static char _jsonBuf[512];
 
@@ -102,36 +103,62 @@ static void _addRecord(int pwm, bool moved, bool completed,
     recordCount++;
 }
 
-static void _publishResults() {
-    snprintf(_jsonBuf, sizeof(_jsonBuf),
-        "{\"type\":\"summary\",\"pwmMin\":%d,\"pwmMax\":%d,"
-        "\"totalRecords\":%d,\"rangoUtil\":%d}",
-        _pwmMin, _pwmMax, recordCount,
-        (_pwmMin > 0 && _pwmMax > 0) ? (_pwmMax - _pwmMin + 1) : 0);
-    MqttComm::publish(TOPIC_SWEEP_RESULTS, _jsonBuf);
-    delay(50);
+// ── Publicación no-bloqueante de resultados ──
+static int  _pubIdx = -1;         // -1=summary, 0..N-1=records, N=done
+static unsigned long _lastPubMs = 0;
+static const unsigned long PUB_INTERVAL_MS = 30;  // un mensaje cada 30ms
 
-    for (int i = 0; i < recordCount; i++) {
-        TestRecord& r = records[i];
+/** Inicia la publicación (llamar una vez al entrar en SW_SHOW_RESULTS). */
+static void _startPublishResults() {
+    _pubIdx = -1;
+    _lastPubMs = 0;  // forzar primer envío inmediato
+}
+
+/**
+ * Publica UN mensaje por iteración de loop.
+ * Retorna true cuando ha terminado de publicar todo.
+ */
+static bool _publishResultsTick() {
+    unsigned long now = millis();
+    if ((now - _lastPubMs) < PUB_INTERVAL_MS) return false;
+    _lastPubMs = now;
+
+    if (_pubIdx == -1) {
+        // Summary
+        snprintf(_jsonBuf, sizeof(_jsonBuf),
+            "{\"type\":\"summary\",\"pwmMin\":%d,\"pwmMax\":%d,"
+            "\"totalRecords\":%d,\"rangoUtil\":%d}",
+            _pwmMin, _pwmMax, recordCount,
+            (_pwmMin > 0 && _pwmMax > 0) ? (_pwmMax - _pwmMin + 1) : 0);
+        MqttComm::publish(TOPIC_SWEEP_RESULTS, _jsonBuf);
+        _pubIdx = 0;
+        return false;
+    }
+
+    if (_pubIdx < recordCount) {
+        TestRecord& r = records[_pubIdx];
         snprintf(_jsonBuf, sizeof(_jsonBuf),
             "{\"type\":\"record\",\"idx\":%d,\"pwm\":%d,"
             "\"moved\":%s,\"completed\":%s,"
             "\"pulsesFwd\":%lu,\"pulsesBack\":%lu,"
             "\"timeFwdMs\":%lu,\"timeBackMs\":%lu,"
             "\"rpmFwd\":%.1f,\"rpmBack\":%.1f}",
-            i, r.pwm,
+            _pubIdx, r.pwm,
             r.moved     ? "true" : "false",
             r.completed ? "true" : "false",
             (unsigned long)r.pulsesFwd, (unsigned long)r.pulsesBack,
             r.timeFwdMs, r.timeBackMs,
             r.rpmFwd, r.rpmBack);
         MqttComm::publish(TOPIC_SWEEP_RESULTS, _jsonBuf);
-        delay(20);
+        _pubIdx++;
+        return false;
     }
 
+    // Done
     snprintf(_jsonBuf, sizeof(_jsonBuf),
         "{\"type\":\"done\",\"totalRecords\":%d}", recordCount);
     MqttComm::publish(TOPIC_SWEEP_RESULTS, _jsonBuf);
+    return true;
 }
 
 static void _resetSweep() {
@@ -143,6 +170,7 @@ static void _resetSweep() {
     _cmdStart     = false;
     _cmdReiniciar = false;
     _stopPending  = false;
+    _pubStarted   = false;
 }
 
 // ── API pública ──────────────────────────────
@@ -203,7 +231,7 @@ void loop() {
             Motor::freno();
             if (_pwmMax < 0)
                 _pwmMax = _currentPWM > PWM_START ? _currentPWM - 1 : _currentPWM;
-            Motor::atras(HOMING_PWM_DEFAULT);
+            Motor::atras(HOMING_PWM);
             _changeState(SW_HOMING);
             _fromHoming = true;
             _stopPending = true;
@@ -221,7 +249,7 @@ void loop() {
             if (startActive) {
                 _changeState(SW_READY);
             } else {
-                Motor::atras(HOMING_PWM_DEFAULT);
+                Motor::atras(HOMING_PWM);
                 _changeState(SW_HOMING);
             }
         }
@@ -293,7 +321,7 @@ void loop() {
             _addRecord(_currentPWM, true, true, _fwdEndPulses, backPulses, fwdTime, backTime);
             _currentPWM++;
             _fromHoming = true;
-            Motor::atras(HOMING_PWM_DEFAULT);
+            Motor::atras(HOMING_PWM);
             _changeState(SW_HOMING);
         }
         break;
@@ -329,8 +357,14 @@ void loop() {
         break;
 
     case SW_SHOW_RESULTS:
-        _publishResults();
-        _changeState(SW_WAIT_REINICIAR);
+        if (!_pubStarted) {
+            _startPublishResults();
+            _pubStarted = true;
+        }
+        if (_publishResultsTick()) {
+            _pubStarted = false;
+            _changeState(SW_WAIT_REINICIAR);
+        }
         break;
 
     case SW_WAIT_REINICIAR:
@@ -341,7 +375,7 @@ void loop() {
             if (startActive) {
                 _changeState(SW_READY);
             } else {
-                Motor::atras(HOMING_PWM_DEFAULT);
+                Motor::atras(HOMING_PWM);
                 _changeState(SW_HOMING);
             }
         }

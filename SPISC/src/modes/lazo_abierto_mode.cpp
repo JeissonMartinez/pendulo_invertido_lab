@@ -174,7 +174,7 @@ void loop() {
                 // Ya estamos en home
                 _changeState(OL_READY);
             } else {
-                Motor::atras(HOMING_PWM_DEFAULT);
+                Motor::atras(HOMING_PWM);
                 _changeState(OL_HOMING_START);
             }
         } else if (_cmdEnd) {
@@ -182,7 +182,7 @@ void loop() {
             if (endActive) {
                 _changeState(OL_READY);
             } else {
-                Motor::adelante(HOMING_PWM_DEFAULT);
+                Motor::adelante(HOMING_PWM);
                 _changeState(OL_HOMING_END);
             }
         } else if (_cmdImpulse) {

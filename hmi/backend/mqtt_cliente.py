@@ -75,15 +75,21 @@ class ClienteMQTT:
                     await client.subscribe(config.TOPICO_SUB_TODOS)
 
                     async for msg in client.messages:
-                        await self._procesar_mensaje(msg)
+                        try:
+                            await self._procesar_mensaje(msg)
+                        except Exception:
+                            logger.exception("Error procesando mensaje MQTT %s", msg.topic)
 
             except aiomqtt.MqttError as e:
                 logger.warning("Conexión MQTT perdida: %s — reintentando en %ds", e, espera)
-                self._client = None
-                await asyncio.sleep(espera)
-                espera = min(espera * 2, 30)
             except asyncio.CancelledError:
                 break
+            except Exception:
+                logger.exception("Error inesperado en loop MQTT — reintentando en %ds", espera)
+            finally:
+                self._client = None
+            await asyncio.sleep(espera)
+            espera = min(espera * 2, 30)
 
     # ── Procesamiento de mensajes entrantes ───────
     async def _procesar_mensaje(self, msg: aiomqtt.Message) -> None:

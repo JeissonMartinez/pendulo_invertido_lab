@@ -7,13 +7,13 @@
 
 namespace SensorsI2C {
 
-// ── Buses I2C ────────────────────────────────
-static TwoWire I2C_Bus0 = TwoWire(0);
-static TwoWire I2C_Bus1 = TwoWire(1);
+// ── Buses I2C (usar globales de Arduino para compartir con OLED) ─
+// Wire  = Bus 0 (SDA=21, SCL=22): AS5600 péndulo + MPU6050
+// Wire1 = Bus 1 (SDA=18, SCL=19): AS5600 carro + OLED SSD1306
 
 // ── Sensores AS5600 ──────────────────────────
-static AS5600 _as5600_pend(&I2C_Bus0);   // Ángulo péndulo
-static AS5600 _as5600_cart(&I2C_Bus1);   // Posición carro
+static AS5600 _as5600_pend(&Wire);    // Ángulo péndulo (Bus 0)
+static AS5600 _as5600_cart(&Wire1);   // Posición carro (Bus 1)
 
 // ── Variables AS5600 péndulo ─────────────────
 static float _anglePend     = 0;
@@ -42,10 +42,10 @@ static const unsigned long SENSOR_PERIOD_US = 2000;  // 2 ms (500 Hz)
 
 // ── MPU6050 raw read (sin librería externa, registro directo) ──
 static void _mpuWriteReg(uint8_t reg, uint8_t val) {
-    I2C_Bus0.beginTransmission(MPU6050_ADDR);
-    I2C_Bus0.write(reg);
-    I2C_Bus0.write(val);
-    I2C_Bus0.endTransmission();
+    Wire.beginTransmission(MPU6050_ADDR);
+    Wire.write(reg);
+    Wire.write(val);
+    Wire.endTransmission();
 }
 
 static bool _mpuInit() {
@@ -54,12 +54,12 @@ static bool _mpuInit() {
     delay(10);
 
     // Verificar WHO_AM_I
-    I2C_Bus0.beginTransmission(MPU6050_ADDR);
-    I2C_Bus0.write(0x75);
-    if (I2C_Bus0.endTransmission(false) != 0) return false;
-    I2C_Bus0.requestFrom((uint8_t)MPU6050_ADDR, (uint8_t)1);
-    if (!I2C_Bus0.available()) return false;
-    uint8_t whoami = I2C_Bus0.read();
+    Wire.beginTransmission(MPU6050_ADDR);
+    Wire.write(0x75);
+    if (Wire.endTransmission(false) != 0) return false;
+    Wire.requestFrom((uint8_t)MPU6050_ADDR, (uint8_t)1);
+    if (!Wire.available()) return false;
+    uint8_t whoami = Wire.read();
     if (whoami != 0x68 && whoami != 0x98) return false;
 
     // Configurar: acelerómetro ±2g, giroscopio ±250°/s
@@ -73,19 +73,19 @@ static bool _mpuInit() {
 static void _mpuRead() {
     if (!_mpuOk) return;
 
-    I2C_Bus0.beginTransmission(MPU6050_ADDR);
-    I2C_Bus0.write(0x3B);  // ACCEL_XOUT_H
-    if (I2C_Bus0.endTransmission(false) != 0) return;
-    I2C_Bus0.requestFrom((uint8_t)MPU6050_ADDR, (uint8_t)14);
-    if (I2C_Bus0.available() < 14) return;
+    Wire.beginTransmission(MPU6050_ADDR);
+    Wire.write(0x3B);  // ACCEL_XOUT_H
+    if (Wire.endTransmission(false) != 0) return;
+    Wire.requestFrom((uint8_t)MPU6050_ADDR, (uint8_t)14);
+    if (Wire.available() < 14) return;
 
-    int16_t axRaw = (I2C_Bus0.read() << 8) | I2C_Bus0.read();
-    int16_t ayRaw = (I2C_Bus0.read() << 8) | I2C_Bus0.read();
-    int16_t azRaw = (I2C_Bus0.read() << 8) | I2C_Bus0.read();
-    I2C_Bus0.read(); I2C_Bus0.read();  // temp (skip)
-    int16_t gxRaw = (I2C_Bus0.read() << 8) | I2C_Bus0.read();
-    int16_t gyRaw = (I2C_Bus0.read() << 8) | I2C_Bus0.read();
-    int16_t gzRaw = (I2C_Bus0.read() << 8) | I2C_Bus0.read();
+    int16_t axRaw = (Wire.read() << 8) | Wire.read();
+    int16_t ayRaw = (Wire.read() << 8) | Wire.read();
+    int16_t azRaw = (Wire.read() << 8) | Wire.read();
+    Wire.read(); Wire.read();  // temp (skip)
+    int16_t gxRaw = (Wire.read() << 8) | Wire.read();
+    int16_t gyRaw = (Wire.read() << 8) | Wire.read();
+    int16_t gzRaw = (Wire.read() << 8) | Wire.read();
 
     // Conversión: ±2g → 16384 LSB/g, ±250°/s → 131 LSB/(°/s)
     _ax = axRaw / 16384.0f * 9.81f;
@@ -110,9 +110,13 @@ static void _mpuRead() {
 
 // ── Inicialización ───────────────────────────
 void begin() {
-    // Inicializar buses I2C
-    I2C_Bus0.begin(I2C_BUS0_SDA, I2C_BUS0_SCL);
-    I2C_Bus1.begin(I2C_BUS1_SDA, I2C_BUS1_SCL);
+    // Inicializar buses I2C globales a 400kHz (Fast Mode)
+    // AS5600, MPU6050 y SSD1306 soportan 400kHz.
+    // Reduce bloqueo I2C de ~92ms a ~23ms por frame OLED.
+    Wire.begin(I2C_BUS0_SDA, I2C_BUS0_SCL);    // Bus 0: AS5600 péndulo + MPU6050
+    Wire.setClock(400000);
+    Wire1.begin(I2C_BUS1_SDA, I2C_BUS1_SCL);   // Bus 1: AS5600 carro + OLED
+    Wire1.setClock(400000);
 
     // AS5600 péndulo (Bus 0)
     _as5600_pend.resetPosition();

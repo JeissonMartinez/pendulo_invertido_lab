@@ -68,7 +68,10 @@ class GestorWebSocket:
                 except (orjson.JSONDecodeError, TypeError):
                     continue
 
-                await self._procesar_comando(mensaje)
+                try:
+                    await self._procesar_comando(mensaje)
+                except Exception:
+                    logger.exception("Error procesando comando WS: %s", mensaje.get('tipo', '?'))
         except WebSocketDisconnect:
             pass
         finally:

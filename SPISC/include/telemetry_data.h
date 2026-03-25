@@ -74,6 +74,7 @@ struct TelemetryPacket {
     // Timestamp y modo
     unsigned long ts;
     FirmwareMode  modo;
+    const char*   ol_state;  // Sub-estado del modo activo (e.g. "OL_READY")
 };
 
 // Helpers para convertir enums a string

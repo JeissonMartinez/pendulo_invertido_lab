@@ -44,7 +44,7 @@ void publishTelemetry(const TelemetryPacket& p) {
         "\"mpu_pitch\":%.2f,\"mpu_roll\":%.2f,"
         "\"pwm\":%d,\"direction\":%d,"
         "\"ls_start\":%s,\"ls_end\":%s,"
-        "\"ts\":%lu,\"modo\":\"%s\","
+        "\"ts\":%lu,\"modo\":\"%s\",\"ol_state\":\"%s\","
         // Mantener campos de compatibilidad con frontend actual
         "\"angle\":%.2f,\"position\":%.2f,\"cart_accel\":%.3f,\"rpm\":%.1f,"
         "\"posicion\":%.2f,\"direccion\":%d"
@@ -57,7 +57,7 @@ void publishTelemetry(const TelemetryPacket& p) {
         p.mpu_pitch, p.mpu_roll,
         p.pwm, (int)p.direction,
         p.ls_start ? "true" : "false", p.ls_end ? "true" : "false",
-        p.ts, firmwareModeToStr(p.modo),
+        p.ts, firmwareModeToStr(p.modo), p.ol_state ? p.ol_state : "",
         // Compatibilidad: angle=angle_pend, position=pos_mag_cm, cart_accel=mpu_ax, rpm=rpm_ir
         p.angle_pend, p.pos_mag_cm, p.mpu_ax, p.rpm_ir,
         p.pos_mag_cm, (int)p.direction

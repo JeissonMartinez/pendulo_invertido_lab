@@ -10,6 +10,8 @@
  */
 
 #include <Arduino.h>
+#include "soc/soc.h"
+#include "soc/rtc_cntl_reg.h"
 
 // Módulos compartidos
 #include "hardware_pins.h"
@@ -39,6 +41,9 @@ static unsigned long lastTelemetryMs = 0;
 static unsigned long lastStatusMs    = 0;
 static unsigned long lastDisplayMs   = 0;
 
+// Forward declaration
+static const char* getActiveModeStateStr();
+
 // ══════════════════════════════════════════════════
 // Construir paquete de telemetría
 // ══════════════════════════════════════════════════
@@ -48,7 +53,7 @@ static void buildTelemetry(TelemetryPacket& pkt) {
     pkt.vueltas_ir = EncoderIR::getVueltas();
     pkt.rps_ir    = EncoderIR::getRPS();
     pkt.rpm_ir    = EncoderIR::getRPM();
-    pkt.pos_ir_cm = EncoderIR::getPosCm();
+    pkt.pos_ir_cm = EncoderIR::getPositionCm();
 
     // AS5600 posición carro (magnético)
     pkt.rps_mag    = SensorsI2C::getRpsMag();
@@ -78,8 +83,9 @@ static void buildTelemetry(TelemetryPacket& pkt) {
     pkt.ls_end    = LimitSwitches::isEndActive();
 
     // Metadata
-    pkt.ts   = millis();
-    pkt.modo = activeMode;
+    pkt.ts       = millis();
+    pkt.modo     = activeMode;
+    pkt.ol_state = getActiveModeStateStr();
 }
 
 // ══════════════════════════════════════════════════
@@ -149,6 +155,13 @@ static void onMqttCommand(const char* topic, const char* payload) {
         return;
     }
 
+    // Auto-switch de modo según el tópico del comando
+    if (strcmp(topic, TOPIC_CMD_SWEEP) == 0 && activeMode != MODE_SWEEP_PWM) {
+        switchMode(MODE_SWEEP_PWM);
+    } else if (strcmp(topic, TOPIC_CMD_OPENLOOP) == 0 && activeMode != MODE_OPEN_LOOP) {
+        switchMode(MODE_OPEN_LOOP);
+    }
+
     // Enrutar al modo activo
     switch (activeMode) {
         case MODE_SWEEP_PWM:  RangoPwmMode::onCommand(topic, payload); break;
@@ -161,6 +174,9 @@ static void onMqttCommand(const char* topic, const char* payload) {
 // Setup
 // ══════════════════════════════════════════════════
 void setup() {
+    // Desactivar brownout detector (USB no entrega suficiente corriente para WiFi)
+    WRITE_PERI_REG(RTC_CNTL_BROWN_OUT_REG, 0);
+
     Serial.begin(115200);
     delay(500);
     Serial.println("\n[main] ═══ SPISC — Firmware Modular ═══");
@@ -197,7 +213,7 @@ void setup() {
     }
 
     // 7. Seguridad
-    Safety::setMqttTimeout(0);  // Deshabilitado por defecto
+    Safety::setMqttTimeout(2000);  // Freno si no hay MQTT en 2s
     Serial.println("[main] Safety OK");
 
     // Modo inicial: IDLE
@@ -214,9 +230,15 @@ void loop() {
     // 1. MQTT keep-alive
     MqttComm::loop();
 
+    // Mantener safety alive mientras MQTT está conectado
+    if (MqttComm::isConnected()) {
+        Safety::markMqttActivity();
+    }
+
     // 2. Leer sensores (alta frecuencia)
     SensorsI2C::update();
     EncoderIR::updateRPM();
+    yield();  // Dar tiempo al stack WiFi tras I2C
 
     // 3. Publicar cambios de limit switches
     LimitSwitches::checkAndPublishChanges();
@@ -232,7 +254,7 @@ void loop() {
     }
 
     // 6. Publicar telemetría periódica
-    if ((now - lastTelemetryMs) >= TELEMETRY_INTERVAL) {
+    if ((now - lastTelemetryMs) >= TELEMETRY_INTERVAL_MS) {
         lastTelemetryMs = now;
         TelemetryPacket pkt = {};
         buildTelemetry(pkt);
@@ -240,7 +262,7 @@ void loop() {
     }
 
     // 7. Publicar estado periódico
-    if ((now - lastStatusMs) >= STATUS_INTERVAL) {
+    if ((now - lastStatusMs) >= STATUS_INTERVAL_MS) {
         lastStatusMs = now;
         MqttComm::publishStatus(
             getActiveModeStateStr(), activeMode,
@@ -249,8 +271,8 @@ void loop() {
             MqttComm::getWifiRssi());
     }
 
-    // 8. Actualizar OLED (~5 Hz)
-    if ((now - lastDisplayMs) >= 200) {
+    // 8. Actualizar OLED (~2 Hz para reducir bloqueo I2C)
+    if ((now - lastDisplayMs) >= 500) {
         lastDisplayMs = now;
         TelemetryPacket pkt = {};
         buildTelemetry(pkt);

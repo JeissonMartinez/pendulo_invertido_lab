@@ -56,8 +56,13 @@ private:
     unsigned long _lastReconnectAttempt;
     unsigned long _reconnectInterval;
 
+    static constexpr uint8_t MAX_SUBS = 10;
+    const char* _subTopics[MAX_SUBS];
+    uint8_t     _subCount;
+
     bool _connectWifi();
     bool _connectMqtt();
+    void _resubscribe();
 
     static MqttBridge* _instance;
     static void _staticCallback(char* topic, byte* payload, unsigned int length);
