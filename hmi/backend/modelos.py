@@ -63,6 +63,7 @@ class DireccionMotor(str, Enum):
 class TipoCalibracion(str, Enum):
     ANGULO = "angle"
     POSICION = "position"
+    MPU = "mpu"
     COMPLETA = "full"
 
 

@@ -66,15 +66,20 @@ void publishTelemetry(const TelemetryPacket& p) {
 }
 
 void publishStatus(const char* state, FirmwareMode mode,
-                   bool lsStart, bool lsEnd, int wifiRssi) {
+                   bool lsStart, bool lsEnd, int wifiRssi,
+                   bool calAngle, bool calPosition, bool calMPU) {
     snprintf(_jsonBuf, sizeof(_jsonBuf),
         "{\"estado\":\"%s\",\"modo\":\"%s\","
         "\"ls_inicio\":%s,\"ls_fin\":%s,"
-        "\"wifi_rssi\":%d}",
+        "\"wifi_rssi\":%d,"
+        "\"calibrated_angle\":%s,\"calibrated_position\":%s,\"calibrated_mpu\":%s}",
         state, firmwareModeToStr(mode),
         lsStart ? "true" : "false",
         lsEnd   ? "true" : "false",
-        wifiRssi);
+        wifiRssi,
+        calAngle    ? "true" : "false",
+        calPosition ? "true" : "false",
+        calMPU      ? "true" : "false");
     _bridge.publish(TOPIC_STATUS, _jsonBuf);
 }
 

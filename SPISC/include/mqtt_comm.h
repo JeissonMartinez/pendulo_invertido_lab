@@ -28,7 +28,8 @@ void publishTelemetry(const TelemetryPacket& pkt);
 
 /** Publica estado del sistema. */
 void publishStatus(const char* state, FirmwareMode mode,
-                   bool lsStart, bool lsEnd, int wifiRssi);
+                   bool lsStart, bool lsEnd, int wifiRssi,
+                   bool calAngle, bool calPosition, bool calMPU);
 
 /** Publica cambio de limit switches. */
 void publishLimits(bool lsStart, bool lsEnd);

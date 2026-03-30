@@ -63,7 +63,7 @@ class ModeloPendulo:
         x_d     — velocidad del carro (cm/s)
 
     La salida se convierte a las unidades del firmware:
-        angle    — grados (0–360), 180 = vertical arriba
+        angle    — grados (0–360), 0 = vertical arriba, 180 = abajo
         position — cm (0–95)
     """
 
@@ -147,8 +147,8 @@ class ModeloPendulo:
 
     @property
     def angle_deg(self) -> float:
-        """Ángulo en grados (0 = abajo, 180 = arriba), como el firmware."""
-        return math.degrees(self.theta)
+        """Ángulo en grados (0 = arriba, 180 = abajo), como el firmware."""
+        return (math.degrees(self.theta) + 180) % 360
 
     @property
     def position_cm(self) -> float:
@@ -205,6 +205,7 @@ class SimuladorPendulo:
         self.errores: list[str] = []
         self.calibrado_angulo = False
         self.calibrado_posicion = False
+        self.calibrado_mpu = False
 
         # Control PID para modo CONTROLLING
         self.pid_angulo = PIDSimple(kp=30.0, ki=0.5, kd=5.0)
@@ -315,6 +316,8 @@ class SimuladorPendulo:
                 self.calibrado_angulo = True
             if self._calibracion_tipo in ("position", "full"):
                 self.calibrado_posicion = True
+            if self._calibracion_tipo in ("mpu", "full"):
+                self.calibrado_mpu = True
             self.estado = "IDLE"
             logger.info("Calibración '%s' completada", self._calibracion_tipo)
 
@@ -324,9 +327,10 @@ class SimuladorPendulo:
 
         # Estrategia de swing-up: impulsos en la dirección correcta
         # basados en la posición del péndulo
-        if angle < 130 or angle > 230:
+        dist_from_up = min(angle, 360 - angle)
+        if dist_from_up > 50:
             # Péndulo lejos del equilibrio — aplicar impulsos de energía
-            if angle < 180:
+            if angle > 180:
                 fuerza = 0.6 * math.sin(self._swingup_t * 3.5)
             else:
                 fuerza = -0.6 * math.sin(self._swingup_t * 3.5)
@@ -359,8 +363,9 @@ class SimuladorPendulo:
             self.modelo.step(DT, fuerza)
             return
 
-        # Verificar seguridad: si el ángulo sale de [130, 230] → emergencia
-        if angle < 130 or angle > 230:
+        # Verificar seguridad: si el ángulo se aleja >50° del equilibrio (0°)
+        dist_from_up = min(angle, 360 - angle)
+        if dist_from_up > 50:
             self.estado = "EMERGENCY"
             self.errores.append("Ángulo fuera de rango de seguridad")
             logger.warning("Ángulo %.1f° fuera de rango → EMERGENCY", angle)
@@ -371,8 +376,13 @@ class SimuladorPendulo:
         pos_correccion = self.pid_posicion.compute(pos_error, DT)
         pos_correccion = max(-2.0, min(2.0, pos_correccion))
 
-        angle_setpoint = 180.0 + pos_correccion
+        angle_setpoint = pos_correccion
+        # Shortest angular error handling wrap-around at 0/360
         angle_error = angle_setpoint - angle
+        if angle_error > 180:
+            angle_error -= 360
+        elif angle_error < -180:
+            angle_error += 360
 
         salida = self.pid_angulo.compute(angle_error, DT)
         fuerza = max(-1.0, min(1.0, salida / 1023.0))
@@ -530,6 +540,7 @@ class SimuladorPendulo:
             "wifi_rssi": random.randint(-55, -35),
             "calibrated_angle": self.calibrado_angulo,
             "calibrated_position": self.calibrado_posicion,
+            "calibrated_mpu": self.calibrado_mpu,
         }
 
     def payload_limites(self) -> dict | None:
@@ -608,13 +619,28 @@ class SimuladorPendulo:
         elif action == "impulse":
             pwm = max(200, min(1023, datos.get("pwm", 500)))
             duration = max(0.1, min(3.0, datos.get("duration", 1.0)))
+            dir_str = datos.get("direction", "")
             self._ol_pwm = pwm
             self._ol_duration = duration
-            # Determine direction based on current position
-            if self.modelo.limit_start or self.modelo.position_cm < 10:
-                self._ol_direction = 1   # adelante
+            # Direction: explicit or auto based on position
+            if dir_str == "forward":
+                if self.modelo.limit_end:
+                    logger.warning("OL: Dirección forward rechazada — limit end activo")
+                    self._ol_state = "OL_STOPPED"
+                    return
+                self._ol_direction = 1
+            elif dir_str == "backward":
+                if self.modelo.limit_start:
+                    logger.warning("OL: Dirección backward rechazada — limit start activo")
+                    self._ol_state = "OL_STOPPED"
+                    return
+                self._ol_direction = -1
             else:
-                self._ol_direction = -1  # atrás
+                # Auto: determine by current position
+                if self.modelo.limit_start or self.modelo.position_cm < 10:
+                    self._ol_direction = 1   # adelante
+                else:
+                    self._ol_direction = -1  # atrás
             self._ol_state = "OL_IMPULSE_RUNNING"
             self._ol_start_time = time.time()
             logger.info("OL: Impulso PWM=%d dur=%.1fs dir=%d", pwm, duration, self._ol_direction)

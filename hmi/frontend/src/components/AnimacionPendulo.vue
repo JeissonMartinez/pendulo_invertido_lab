@@ -240,20 +240,18 @@ const carroX = computed(() => {
 const pivoteY = computed(() => pistaY - carroH)
 
 // ── Punta del péndulo ────────────────────────
-// Ángulo: 0° = abajo, 180° = arriba
+// Ángulo: 0° = arriba, 180° = abajo
 // En SVG: arriba es Y negativo
 const penduloPuntaX = computed(() => {
   const rad = (interpolAngle.value * Math.PI) / 180
-  // 0° → péndulo cuelga abajo (+Y), 180° → arriba (-Y)
-  // En coordenadas SVG: sin(rad) da X, -cos(rad) da Y (arriba es negativo)
-  return carroX.value + barraLen * Math.sin(rad)
+  return carroX.value - barraLen * Math.sin(rad)
 })
 
 const penduloPuntaY = computed(() => {
   const rad = (interpolAngle.value * Math.PI) / 180
-  return pivoteY.value - barraLen * (-Math.cos(rad))
-  // Cuando angle=0 (abajo): cos(0)=1, -cos=-1, pivoteY - (-1*100) = pivoteY + 100 (abajo ✓)
-  // Cuando angle=180 (arriba): cos(π)=-1, -cos=1, pivoteY - (1*100) = pivoteY - 100 (arriba ✓)
+  return pivoteY.value - barraLen * Math.cos(rad)
+  // Cuando angle=0 (arriba): cos(0)=1, pivoteY - 100 (arriba ✓)
+  // Cuando angle=180 (abajo): cos(π)=-1, pivoteY + 100 (abajo ✓)
 })
 
 // ── Display formateado ───────────────────────

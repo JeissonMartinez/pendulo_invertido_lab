@@ -151,7 +151,20 @@ static void onMqttCommand(const char* topic, const char* payload) {
 
     // Calibración
     if (strcmp(topic, TOPIC_CMD_CALIBRATE) == 0) {
-        SensorsI2C::calibrateAngle();
+        // Parsear tipo: {"type":"angle"}, {"type":"position"}, {"type":"mpu"}, {"type":"full"}
+        const char* typeKey = strstr(payload, "\"type\"");
+        if (typeKey && strstr(typeKey, "\"position\"")) {
+            SensorsI2C::resetMagPosition();
+        } else if (typeKey && strstr(typeKey, "\"mpu\"")) {
+            SensorsI2C::calibrateMPU();
+        } else if (typeKey && strstr(typeKey, "\"full\"")) {
+            SensorsI2C::calibrateAngle();
+            SensorsI2C::resetMagPosition();
+            SensorsI2C::calibrateMPU();
+        } else {
+            // "angle" o sin tipo (compatibilidad)
+            SensorsI2C::calibrateAngle();
+        }
         return;
     }
 
@@ -268,7 +281,10 @@ void loop() {
             getActiveModeStateStr(), activeMode,
             LimitSwitches::isStartActive(),
             LimitSwitches::isEndActive(),
-            MqttComm::getWifiRssi());
+            MqttComm::getWifiRssi(),
+            SensorsI2C::isAngleCalibrated(),
+            SensorsI2C::isMagPosCalibrated(),
+            SensorsI2C::isMPUCalibrated());
     }
 
     // 8. Actualizar OLED (~2 Hz para reducir bloqueo I2C)

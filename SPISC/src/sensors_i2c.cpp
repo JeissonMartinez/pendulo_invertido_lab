@@ -17,28 +17,43 @@ static AS5600 _as5600_cart(&Wire1);   // Posición carro (Bus 1)
 
 // ── Variables AS5600 péndulo ─────────────────
 static float _anglePend     = 0;
-static float _angleOffset   = 0;
+static float _angleOffset   = 151.7f;  // Valor calibrado (0°=arriba, 180°=abajo)
 static float _velAngPend    = 0;
 static float _prevAnglePend = 0;
+static bool  _calibratedAngle = false;
 
 // ── Variables AS5600 carro (magnético) ───────
 static float  _posMagCm    = 0;
 static float  _rpsMag      = 0;
 static float  _rpmMag      = 0;
-static long   _magVueltas  = 0;
-static int32_t _lastMagRaw = 0;
-static long   _posAcumulada = 0;
+static int32_t _posOffset  = 265;  // Offset calibrado: cumPos cuando LS INICIO activo
+static bool   _calibratedMagPos = false;
 
 // ── Variables MPU6050 ────────────────────────
 static float _ax = 0, _ay = 0, _az = 0;
 static float _gx = 0, _gy = 0, _gz = 0;
 static float _pitch = 0, _roll = 0;
 static bool  _mpuOk = false;
+static float _gxOffset = 0, _gyOffset = 0, _gzOffset = 0;
+static bool  _calibratedMPU = false;
 
 // ── Temporización ────────────────────────────
 static unsigned long _lastSensorRead = 0;
 static unsigned long _lastMagCalc    = 0;
 static const unsigned long SENSOR_PERIOD_US = 2000;  // 2 ms (500 Hz)
+
+// ── I2C error tracking y recovery ───────────
+static int _i2cErrorCount0 = 0;  // Bus 0 (Wire)
+static int _i2cErrorCount1 = 0;  // Bus 1 (Wire1)
+static const int I2C_ERROR_THRESHOLD = 5;  // errores consecutivos para recovery
+
+static void _recoverI2CBus(TwoWire &bus, uint8_t sda, uint8_t scl) {
+    bus.end();
+    delay(5);
+    bus.begin(sda, scl);
+    bus.setClock(400000);
+    Serial.printf("[sensors] I2C recovery (SDA=%d SCL=%d)\n", sda, scl);
+}
 
 // ── MPU6050 raw read (sin librería externa, registro directo) ──
 static void _mpuWriteReg(uint8_t reg, uint8_t val) {
@@ -91,9 +106,9 @@ static void _mpuRead() {
     _ax = axRaw / 16384.0f * 9.81f;
     _ay = ayRaw / 16384.0f * 9.81f;
     _az = azRaw / 16384.0f * 9.81f;
-    _gx = gxRaw / 131.0f;
-    _gy = gyRaw / 131.0f;
-    _gz = gzRaw / 131.0f;
+    _gx = gxRaw / 131.0f - _gxOffset;
+    _gy = gyRaw / 131.0f - _gyOffset;
+    _gz = gzRaw / 131.0f - _gzOffset;
 
     // Filtro complementario para pitch y roll
     static unsigned long prevT = 0;
@@ -144,7 +159,17 @@ void update() {
     _lastSensorRead = now;
 
     // ── AS5600 #1: Ángulo del péndulo ──────
-    float rawAngle = map(_as5600_pend.readAngle(), 0, 4095, 3600, 0) / 10.0f;
+    int rawAngleRaw = _as5600_pend.readAngle();
+    if (rawAngleRaw < 0) {
+        _i2cErrorCount0++;
+        if (_i2cErrorCount0 >= I2C_ERROR_THRESHOLD) {
+            _recoverI2CBus(Wire, I2C_BUS0_SDA, I2C_BUS0_SCL);
+            _i2cErrorCount0 = 0;
+        }
+    } else {
+        _i2cErrorCount0 = 0;
+    }
+    float rawAngle = map(rawAngleRaw, 0, 4095, 3600, 0) / 10.0f;
     _anglePend = fmod(rawAngle - _angleOffset + 360.0f, 360.0f);
 
     // Velocidad angular del péndulo
@@ -156,15 +181,20 @@ void update() {
     _prevAnglePend = _anglePend;
 
     // ── AS5600 #2: Posición del carro ──────
-    int32_t rawPos = _as5600_cart.getCumulativePosition();
-    int32_t delta = rawPos - _lastMagRaw;
-
-    if (delta < -2000) _magVueltas++;
-    if (delta > 2000)  _magVueltas--;
-
-    _lastMagRaw = rawPos;
-    _posAcumulada = (_magVueltas * 360) + map(rawPos, 0, 4095, 0, 360);
-    _posMagCm = _posAcumulada * CM_POR_GRADO;
+    // getCumulativePosition() ya acumula revoluciones internamente.
+    // Cada revolución completa = 4096 pasos.
+    int32_t cumPos = _as5600_cart.getCumulativePosition();
+    if (_as5600_cart.lastError() != 0) {
+        _i2cErrorCount1++;
+        if (_i2cErrorCount1 >= I2C_ERROR_THRESHOLD) {
+            _recoverI2CBus(Wire1, I2C_BUS1_SDA, I2C_BUS1_SCL);
+            _i2cErrorCount1 = 0;
+        }
+    } else {
+        _i2cErrorCount1 = 0;
+    }
+    // Aplicar offset calibrado para que posMagCm=0 cuando LS INICIO activo
+    _posMagCm = ((cumPos - _posOffset) / 4096.0f) * 360.0f * CM_POR_GRADO;
 
     // RPM/RPS del encoder magnético (~cada 200ms)
     unsigned long nowMs = millis();
@@ -192,11 +222,16 @@ float getAnglePend()      { return _anglePend; }
 float getAngularVelPend() { return _velAngPend; }
 
 void calibrateAngle() {
-    _angleOffset = map(_as5600_pend.readAngle(), 0, 4095, 3600, 0) / 10.0f;
-    Serial.printf("[sensors] Ángulo calibrado. Offset: %.1f°\n", _angleOffset);
+    // Convención: 0°=arriba, 180°=abajo.
+    // Al calibrar con péndulo colgando (abajo), queremos que el resultado = 180°.
+    float rawAngle = map(_as5600_pend.readAngle(), 0, 4095, 3600, 0) / 10.0f;
+    _angleOffset = rawAngle - 180.0f;
+    _calibratedAngle = true;
+    Serial.printf("[sensors] Ángulo calibrado. Offset: %.1f° (0°=arriba, 180°=abajo)\n", _angleOffset);
 }
 
-float getAngleOffset() { return _angleOffset; }
+float getAngleOffset()    { return _angleOffset; }
+bool isAngleCalibrated()  { return _calibratedAngle; }
 
 // ── Getters AS5600 carro ─────────────────────
 float getPosMagCm() { return _posMagCm; }
@@ -204,13 +239,13 @@ float getRpsMag()   { return _rpsMag; }
 float getRpmMag()   { return _rpmMag; }
 
 void resetMagPosition() {
-    _as5600_cart.resetPosition();
-    _as5600_cart.resetCumulativePosition();
-    _magVueltas   = 0;
-    _lastMagRaw   = 0;
-    _posAcumulada = 0;
+    _as5600_cart.resetCumulativePosition(0);
     _posMagCm     = 0;
+    _calibratedMagPos = true;
+    Serial.println("[sensors] Posición magnética calibrada a 0.0 cm");
 }
+
+bool isMagPosCalibrated() { return _calibratedMagPos; }
 
 // ── Getters MPU6050 ──────────────────────────
 float getAccelX() { return _ax; }
@@ -221,5 +256,37 @@ float getGyroY()  { return _gy; }
 float getGyroZ()  { return _gz; }
 float getPitch()  { return _pitch; }
 float getRoll()   { return _roll; }
+
+void calibrateMPU() {
+    if (!_mpuOk) {
+        Serial.println("[sensors] MPU6050 no disponible — calibración omitida");
+        return;
+    }
+    // Promediar ~100 lecturas del giroscopio en reposo
+    const int N = 100;
+    float sumGx = 0, sumGy = 0, sumGz = 0;
+    for (int i = 0; i < N; i++) {
+        Wire.beginTransmission(MPU6050_ADDR);
+        Wire.write(0x43);  // GYRO_XOUT_H
+        if (Wire.endTransmission(false) != 0) continue;
+        Wire.requestFrom((uint8_t)MPU6050_ADDR, (uint8_t)6);
+        if (Wire.available() < 6) continue;
+        int16_t gxR = (Wire.read() << 8) | Wire.read();
+        int16_t gyR = (Wire.read() << 8) | Wire.read();
+        int16_t gzR = (Wire.read() << 8) | Wire.read();
+        sumGx += gxR / 131.0f;
+        sumGy += gyR / 131.0f;
+        sumGz += gzR / 131.0f;
+        delayMicroseconds(2000);  // ~2ms entre lecturas
+    }
+    _gxOffset = sumGx / N;
+    _gyOffset = sumGy / N;
+    _gzOffset = sumGz / N;
+    _calibratedMPU = true;
+    Serial.printf("[sensors] MPU calibrado. Offsets gyro: gx=%.2f gy=%.2f gz=%.2f °/s\n",
+                  _gxOffset, _gyOffset, _gzOffset);
+}
+
+bool isMPUCalibrated() { return _calibratedMPU; }
 
 }  // namespace SensorsI2C

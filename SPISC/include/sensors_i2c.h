@@ -22,12 +22,13 @@ void begin();
 void update();
 
 // ── AS5600 #1: Ángulo del péndulo ────────────
-float getAnglePend();         // grados (0-360, 180=vertical)
+float getAnglePend();         // grados (0-360, 0=arriba, 180=abajo)
 float getAngularVelPend();    // °/s
 
-/** Calibrar offset de ángulo (péndulo colgando = 0°). */
+/** Calibrar offset de ángulo (péndulo colgando → 180°). */
 void calibrateAngle();
 float getAngleOffset();
+bool isAngleCalibrated();
 
 // ── AS5600 #2: Posición del carro (magnético) ─
 float getPosMagCm();          // posición en cm
@@ -36,6 +37,7 @@ float getRpmMag();            // rev/min del AS5600 motor
 
 /** Resetear posición magnética a cero. */
 void resetMagPosition();
+bool isMagPosCalibrated();
 
 // ── MPU6050: IMU ─────────────────────────────
 float getAccelX();            // m/s²
@@ -46,6 +48,10 @@ float getGyroY();
 float getGyroZ();
 float getPitch();             // grados (filtro complementario)
 float getRoll();              // grados (filtro complementario)
+
+/** Calibrar offsets del giroscopio (MPU debe estar en reposo). */
+void calibrateMPU();
+bool isMPUCalibrated();
 
 }  // namespace SensorsI2C
 

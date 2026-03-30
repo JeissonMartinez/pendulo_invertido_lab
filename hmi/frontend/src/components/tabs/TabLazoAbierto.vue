@@ -44,6 +44,37 @@
             </div>
           </div>
 
+          <!-- Calibración de sensores -->
+          <div class="ol-calibracion">
+            <span class="control-label">Calibración</span>
+            <div class="calibracion-botones">
+              <button
+                class="btn btn-calibrar"
+                @click="store.calibrar('angle')"
+                :disabled="!store.wsConectado || esOLActivo"
+              >
+                🎯 Ángulo
+                <span class="cal-badge" :class="store.estado.calibrated_angle ? 'cal-ok' : 'cal-pending'">{{ store.estado.calibrated_angle ? '✔' : '⚠' }}</span>
+              </button>
+              <button
+                class="btn btn-calibrar"
+                @click="store.calibrar('position')"
+                :disabled="!store.wsConectado || esOLActivo"
+              >
+                📏 Pos. Mag
+                <span class="cal-badge" :class="store.estado.calibrated_position ? 'cal-ok' : 'cal-pending'">{{ store.estado.calibrated_position ? '✔' : '⚠' }}</span>
+              </button>
+              <button
+                class="btn btn-calibrar"
+                @click="store.calibrar('mpu')"
+                :disabled="!store.wsConectado || esOLActivo"
+              >
+                🔄 MPU
+                <span class="cal-badge" :class="store.estado.calibrated_mpu ? 'cal-ok' : 'cal-pending'">{{ store.estado.calibrated_mpu ? '✔' : '⚠' }}</span>
+              </button>
+            </div>
+          </div>
+
           <!-- PWM slider + input -->
           <div class="ol-param">
             <div class="param-header">
@@ -93,6 +124,25 @@
             />
             <div class="param-range-labels">
               <span>0.1s</span><span>3.0s</span>
+            </div>
+          </div>
+
+          <!-- Dirección del impulso -->
+          <div class="ol-direccion">
+            <span class="control-label">Dirección</span>
+            <div class="direccion-opciones">
+              <label class="dir-option" :class="{ active: directionVal === 'auto' }">
+                <input type="radio" v-model="directionVal" value="auto" />
+                ⬅➡ AUTO
+              </label>
+              <label class="dir-option" :class="{ active: directionVal === 'forward' }">
+                <input type="radio" v-model="directionVal" value="forward" />
+                ➡ ADELANTE
+              </label>
+              <label class="dir-option" :class="{ active: directionVal === 'backward' }">
+                <input type="radio" v-model="directionVal" value="backward" />
+                ⬅ ATRÁS
+              </label>
             </div>
           </div>
 
@@ -157,6 +207,7 @@ const store = usePendulumStore()
 
 const pwmVal = ref(500)
 const durationVal = ref(1.0)
+const directionVal = ref('auto')
 
 const ESTADOS_ACTIVOS_OL = ['OL_HOMING_START', 'OL_HOMING_END', 'OL_IMPULSE_RUNNING']
 
@@ -174,7 +225,7 @@ const puedeEnviarImpulso = computed(() =>
 )
 
 function enviar() {
-  store.enviarImpulso(pwmVal.value, durationVal.value)
+  store.enviarImpulso(pwmVal.value, durationVal.value, directionVal.value)
 }
 
 const estadoOLTexto = computed(() => {
@@ -253,6 +304,75 @@ const claseBadgeOL = computed(() => {
 .homing-botones {
   display: flex;
   gap: 8px;
+}
+
+.ol-calibracion {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.calibracion-botones {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.btn-calibrar {
+  background: #F3E8F9;
+  color: #8C2981;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  font-size: 0.78rem;
+}
+
+.btn-calibrar:hover:not(:disabled) {
+  background: #E8D5F5;
+}
+
+.cal-badge {
+  font-size: 0.7rem;
+  font-weight: 700;
+}
+
+.cal-ok { color: #2E7D32; }
+.cal-pending { color: #E65100; }
+
+.ol-direccion {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.direccion-opciones {
+  display: flex;
+  gap: 6px;
+}
+
+.dir-option {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 5px 10px;
+  border: 1px solid var(--md-outline);
+  border-radius: 8px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  user-select: none;
+}
+
+.dir-option input[type="radio"] {
+  display: none;
+}
+
+.dir-option.active {
+  background: #E3F2FD;
+  color: #1565C0;
+  border-color: #1565C0;
 }
 
 /* ── Parámetros (sliders) ───────────────────── */

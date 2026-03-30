@@ -6,7 +6,9 @@
  * Comandos (via pendulum/cmd/openloop):
  *   {"action":"home"}                       — mover a LS_START
  *   {"action":"end"}                        — mover a LS_END
- *   {"action":"impulse","pwm":500,"duration":1.5} — impulso con PWM y duración
+ *   {"action":"impulse","pwm":500,"duration":1.5}           — impulso auto
+ *   {"action":"impulse","pwm":500,"duration":1.5,"direction":"forward"}  — impulso adelante
+ *   {"action":"impulse","pwm":500,"duration":1.5,"direction":"backward"} — impulso atrás
  *   {"action":"stop"}                       — freno inmediato
  */
 #include "lazo_abierto_mode.h"
@@ -37,6 +39,7 @@ static unsigned long _stateEntry = 0;
 // Parámetros del impulso actual
 static int _impulsePwm           = 500;
 static unsigned long _impulseDurationMs = 1000;
+static bool _impulseForward      = true;  // dirección del impulso activo
 
 // Posición conocida (para determinar dirección del impulso)
 static bool _atStart = false;
@@ -49,6 +52,7 @@ static volatile bool _cmdImpulse = false;
 static volatile bool _cmdStop    = false;
 static int  _pendingPwm          = 500;
 static unsigned long _pendingDurationMs = 1000;
+static int  _pendingDirection     = 0;  // 0=auto, 1=forward, -1=backward
 
 // ── Helpers ──────────────────────────────────
 static void _changeState(OLState s) {
@@ -136,6 +140,13 @@ void onCommand(const char* topic, const char* payload) {
         if (dur < 0.1f) dur = 0.1f;
         if (dur > 3.0f) dur = 3.0f;
         _pendingDurationMs = (unsigned long)(dur * 1000.0f);
+
+        // Parsear dirección opcional
+        const char* dirVal = _findValue(payload, "direction");
+        if (dirVal && strstr(dirVal, "forward"))       _pendingDirection = 1;
+        else if (dirVal && strstr(dirVal, "backward"))  _pendingDirection = -1;
+        else                                            _pendingDirection = 0;  // auto
+
         _cmdImpulse = true;
     } else if (strstr(actionKey, "\"stop\"")) {
         _cmdStop = true;
@@ -193,20 +204,46 @@ void loop() {
             // Resetear contadores para medición del impulso
             EncoderIR::resetPulseCount();
 
-            // Determinar dirección según posición
-            if (startActive || _atStart) {
-                // Estamos en inicio → impulso hacia adelante
-                Motor::adelante(_impulsePwm);
-            } else if (endActive || _atEnd) {
-                // Estamos en fin → impulso hacia atrás
-                Motor::atras(_impulsePwm);
+            // Determinar dirección: manual o automática
+            bool goForward = true;  // default
+
+            if (_pendingDirection == 1) {
+                // Usuario eligió adelante — validar seguridad
+                if (endActive || _atEnd) {
+                    Serial.println("[openloop] ERROR: No se puede ir adelante, ya está en el extremo FIN.");
+                    _changeState(OL_STOPPED);
+                    break;
+                }
+                goForward = true;
+            } else if (_pendingDirection == -1) {
+                // Usuario eligió atrás — validar seguridad
+                if (startActive || _atStart) {
+                    Serial.println("[openloop] ERROR: No se puede ir atrás, ya está en el extremo INICIO.");
+                    _changeState(OL_STOPPED);
+                    break;
+                }
+                goForward = false;
             } else {
-                // Posición desconocida → impulso hacia adelante por defecto
-                Motor::adelante(_impulsePwm);
+                // Auto-detección por posición
+                if (startActive || _atStart) {
+                    goForward = true;
+                } else if (endActive || _atEnd) {
+                    goForward = false;
+                } else {
+                    goForward = true;  // posición desconocida → adelante
+                }
             }
+
+            if (goForward) {
+                Motor::adelante(_impulsePwm);
+            } else {
+                Motor::atras(_impulsePwm);
+            }
+            _impulseForward = goForward;
             _changeState(OL_IMPULSE_RUNNING);
-            Serial.printf("[openloop] Impulso PWM=%d dur=%lums\n",
-                          _impulsePwm, _impulseDurationMs);
+            Serial.printf("[openloop] Impulso PWM=%d dur=%lums dir=%s\n",
+                          _impulsePwm, _impulseDurationMs,
+                          goForward ? "ADELANTE" : "ATRAS");
         }
         break;
 
@@ -255,8 +292,8 @@ void loop() {
             _changeState(OL_STOPPED);
             break;
         }
-        // Frenar si llega a un limit switch
-        if (startActive || endActive) {
+        // Frenar solo si llega al limit switch en la dirección de movimiento
+        if ((_impulseForward && endActive) || (!_impulseForward && startActive)) {
             Motor::freno();
             _atStart = startActive;
             _atEnd = endActive;

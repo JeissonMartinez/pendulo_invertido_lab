@@ -49,7 +49,7 @@ const props = defineProps({
 
 // ── Definición de gráficos ───────────────────
 const graficos = reactive([
-  { id: 'angle',       label: 'Ángulo',         unit: '°',     color: '#8C2981', visible: props.graficosDefault ? props.graficosDefault.includes('angle')       : true,  min: 0,   max: 360, setpoint: 180 },
+  { id: 'angle',       label: 'Ángulo',         unit: '°',     color: '#8C2981', visible: props.graficosDefault ? props.graficosDefault.includes('angle')       : true,  min: null, max: null, setpoint: 0, dataKey: 'angle_pend_unwrap' },
   { id: 'position',    label: 'Posición',       unit: 'cm',    color: '#B5367A', visible: props.graficosDefault ? props.graficosDefault.includes('position')    : true,  min: 0,   max: 95,  setpoint: 45.0 },
   { id: 'pwm',         label: 'PWM',            unit: '0-1023',color: '#FC8961', visible: props.graficosDefault ? props.graficosDefault.includes('pwm')         : true,  min: 0,   max: 1023 },
   { id: 'cart_accel',  label: 'Aceleración',    unit: 'm/s²',  color: '#51127C', visible: props.graficosDefault ? props.graficosDefault.includes('cart_accel')  : false, min: -5,  max: 5 },
@@ -60,7 +60,7 @@ const graficos = reactive([
   { id: 'pos_ir_cm',    label: 'Pos IR',         unit: 'cm',    color: '#8E24AA', visible: props.graficosDefault ? props.graficosDefault.includes('pos_ir_cm')   : false, min: 0,   max: 95 },
   { id: 'rpm_mag',      label: 'RPM Mag',        unit: 'rpm',   color: '#5E35B1', visible: props.graficosDefault ? props.graficosDefault.includes('rpm_mag')     : false, min: 0,   max: 600 },
   { id: 'pos_mag_cm',   label: 'Pos Mag',        unit: 'cm',    color: '#3949AB', visible: props.graficosDefault ? props.graficosDefault.includes('pos_mag_cm')  : false, min: 0,   max: 95 },
-  { id: 'angle_pend',   label: 'Ang. Pénd.',     unit: '°',     color: '#1E88E5', visible: props.graficosDefault ? props.graficosDefault.includes('angle_pend')  : false, min: 0,   max: 360, setpoint: 180 },
+  { id: 'angle_pend',   label: 'Ang. Pénd.',     unit: '°',     color: '#1E88E5', visible: props.graficosDefault ? props.graficosDefault.includes('angle_pend')  : false, min: null, max: null, setpoint: 0, dataKey: 'angle_pend_unwrap' },
   { id: 'vel_ang_pend', label: 'Vel. Ang.',      unit: '°/s',   color: '#00ACC1', visible: props.graficosDefault ? props.graficosDefault.includes('vel_ang_pend'): false, min: -500, max: 500 },
   { id: 'mpu_ax',       label: 'MPU Ax',         unit: 'm/s²',  color: '#00897B', visible: props.graficosDefault ? props.graficosDefault.includes('mpu_ax')     : false, min: -15, max: 15 },
   { id: 'mpu_ay',       label: 'MPU Ay',         unit: 'm/s²',  color: '#43A047', visible: props.graficosDefault ? props.graficosDefault.includes('mpu_ay')     : false, min: -15, max: 15 },
@@ -133,6 +133,7 @@ function crearPlot(grafico, el) {
       y: {
         min: grafico.min,
         max: grafico.max,
+        auto: grafico.min === null,
       },
     },
     series,
@@ -176,7 +177,7 @@ function actualizarGraficos() {
     const plot = plotMap[grafico.id]
     if (!plot) continue
 
-    const valores = h[grafico.id]
+    const valores = h[grafico.dataKey || grafico.id]
     if (!valores) continue
 
     const data = [tsSegs, valores.slice(startIdx)]

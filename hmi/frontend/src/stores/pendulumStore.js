@@ -56,6 +56,7 @@ export const usePendulumStore = defineStore('pendulum', () => {
     wifi_rssi: 0,
     calibrated_angle: false,
     calibrated_position: false,
+    calibrated_mpu: false,
   })
 
   // ── Historial de telemetría (ring buffer) ────
@@ -73,6 +74,7 @@ export const usePendulumStore = defineStore('pendulum', () => {
     rpm_mag: [],
     pos_mag_cm: [],
     angle_pend: [],
+    angle_pend_unwrap: [],
     vel_ang_pend: [],
     mpu_ax: [],
     mpu_ay: [],
@@ -174,6 +176,7 @@ export const usePendulumStore = defineStore('pendulum', () => {
       wifi_rssi: d.wifi_rssi ?? 0,
       calibrated_angle: d.calibrated_angle ?? false,
       calibrated_position: d.calibrated_position ?? false,
+      calibrated_mpu: d.calibrated_mpu ?? false,
     }
   }
 
@@ -253,6 +256,20 @@ export const usePendulumStore = defineStore('pendulum', () => {
     h.rpm_mag.push(datos.rpm_mag ?? 0)
     h.pos_mag_cm.push(datos.pos_mag_cm ?? 0)
     h.angle_pend.push(datos.angle_pend ?? 0)
+
+    // Unwrap del ángulo para gráficos sin saltos 360→0
+    const rawAngle = datos.angle_pend ?? 0
+    const prevArr = h.angle_pend_unwrap
+    if (prevArr.length === 0) {
+      prevArr.push(rawAngle)
+    } else {
+      const prev = prevArr[prevArr.length - 1]
+      let diff = rawAngle - (((prev % 360) + 360) % 360)
+      if (diff > 180) diff -= 360
+      if (diff < -180) diff += 360
+      prevArr.push(prev + diff)
+    }
+
     h.vel_ang_pend.push(datos.vel_ang_pend ?? 0)
     h.mpu_ax.push(datos.mpu_ax ?? 0)
     h.mpu_ay.push(datos.mpu_ay ?? 0)
@@ -318,8 +335,12 @@ export const usePendulumStore = defineStore('pendulum', () => {
   }
 
   // ── Acciones Lazo Abierto ───────────────────
-  function enviarComandoOpenLoop(action, pwm = 500, duration = 1.0) {
-    enviarComando('cmd_openloop', { action, pwm, duration })
+  function enviarComandoOpenLoop(action, pwm = 500, duration = 1.0, direction = 'auto') {
+    const datos = { action, pwm, duration }
+    if (direction && direction !== 'auto') {
+      datos.direction = direction
+    }
+    enviarComando('cmd_openloop', datos)
   }
 
   function homeCarro() {
@@ -330,8 +351,8 @@ export const usePendulumStore = defineStore('pendulum', () => {
     enviarComandoOpenLoop('end')
   }
 
-  function enviarImpulso(pwm, duration) {
-    enviarComandoOpenLoop('impulse', pwm, duration)
+  function enviarImpulso(pwm, duration, direction = 'auto') {
+    enviarComandoOpenLoop('impulse', pwm, duration, direction)
   }
 
   function detenerMotor() {
