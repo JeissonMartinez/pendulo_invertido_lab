@@ -33,23 +33,56 @@ bool MqttBridge::begin() {
 }
 
 void MqttBridge::loop() {
-    // Verificar WiFi
-    if (WiFi.status() != WL_CONNECTED) {
-        Serial.println("[MqttBridge] WiFi desconectado, reconectando...");
-        _connectWifi();
+#ifdef CFG_WIFI_AP
+    // ── Modo AP: verificar si hay clientes conectados ──
+    static unsigned long lastClientCheck = 0;
+    static uint8_t lastClientCount = 0;
+    
+    uint8_t clientCount = WiFi.softAPgetStationNum();
+    
+    // Log cambios en clientes conectados
+    if (clientCount != lastClientCount) {
+        Serial.printf("[MqttBridge] Clientes AP: %d\n", clientCount);
+        lastClientCount = clientCount;
+    }
+    
+    // Si no hay clientes, no tiene sentido intentar MQTT
+    if (clientCount == 0) {
+        // Mostrar recordatorio cada 10 segundos
+        if (millis() - lastClientCheck >= 10000) {
+            lastClientCheck = millis();
+            Serial.printf("[MqttBridge] Esperando cliente... Conectar a WiFi '%s'\n", 
+                          WIFI_AP_SSID);
+        }
         return;
     }
+    
+#else
+    // ── Modo STA: verificar conexión al router ──
+    if (WiFi.status() != WL_CONNECTED) {
+        Serial.println("[MqttBridge] WiFi desconectado, reconectando...");
+        _connectWifiSTA();
+        return;
+    }
+#endif
 
-    // Verificar MQTT
+    // ── Verificar/reconectar MQTT (común para ambos modos) ──
     if (!_mqttClient.connected()) {
         unsigned long now = millis();
         if (now - _lastReconnectAttempt >= _reconnectInterval) {
             _lastReconnectAttempt = now;
+            
+            Serial.printf("[MqttBridge] Intentando MQTT %s:%d...\n", 
+                          MQTT_BROKER, MQTT_PORT);
+            
             if (_connectMqtt()) {
-                _reconnectInterval = 1000; // reset backoff
+                _reconnectInterval = 1000;  // Reset backoff
+                Serial.println("[MqttBridge] MQTT conectado!");
             } else {
-                // Exponential backoff: 1s → 2s → 4s → ... → 30s
+                // Exponential backoff: 1s → 2s → 4s → ... → 30s max
                 _reconnectInterval = min(_reconnectInterval * 2, 30000UL);
+                Serial.printf("[MqttBridge] MQTT fallo. Reintento en %lu ms\n", 
+                              _reconnectInterval);
             }
         }
     }
@@ -84,15 +117,73 @@ bool MqttBridge::isMqttConnected() {
 }
 
 int MqttBridge::getWifiRssi() const {
+#ifdef CFG_WIFI_AP
+    // En modo AP, RSSI no aplica (somos el AP, no un cliente)
+    // Retornar indicador basado en clientes conectados
+    return WiFi.softAPgetStationNum() > 0 ? -30 : -100;
+#else
     return WiFi.RSSI();
+#endif
 }
 
-// ── Conexión WiFi ────────────────────────────────
+// ── Selector de modo WiFi ────────────────────────
 bool MqttBridge::_connectWifi() {
+#ifdef CFG_WIFI_AP
+    return _connectWifiAP();
+#else
+    return _connectWifiSTA();
+#endif
+}
+
+// ── Modo Access Point ────────────────────────────
+bool MqttBridge::_connectWifiAP() {
+    Serial.println("[MqttBridge] Iniciando modo Access Point...");
+    
+    // Desconectar cualquier conexión previa
+    WiFi.disconnect(true);
+    delay(100);
+    WiFi.mode(WIFI_MODE_AP);  // Usar enum del framework ESP32
+    
+    // Configurar IP estática
+    if (!WiFi.softAPConfig(AP_LOCAL_IP, AP_GATEWAY, AP_SUBNET)) {
+        Serial.println("[MqttBridge] Error configurando IP del AP");
+        return false;
+    }
+    
+    // Iniciar AP
+    bool success = WiFi.softAP(
+        WIFI_AP_SSID, 
+        WIFI_AP_PASSWORD,
+        WIFI_AP_CHANNEL,
+        false,              // SSID visible (no oculto)
+        WIFI_AP_MAX_CONN    // Máximo clientes
+    );
+    
+    if (!success) {
+        Serial.println("[MqttBridge] Error al crear Access Point");
+        return false;
+    }
+    
+    Serial.println("[MqttBridge] ═══════════════════════════════════");
+    Serial.println("[MqttBridge] ACCESS POINT ACTIVO");
+    Serial.printf( "[MqttBridge]   SSID: %s\n", WIFI_AP_SSID);
+    Serial.printf( "[MqttBridge]   Password: %s\n", WIFI_AP_PASSWORD);
+    Serial.printf( "[MqttBridge]   IP: %s\n", WiFi.softAPIP().toString().c_str());
+    Serial.printf( "[MqttBridge]   Canal: %d\n", WIFI_AP_CHANNEL);
+    Serial.println("[MqttBridge] ═══════════════════════════════════");
+    Serial.printf( "[MqttBridge] Esperando conexión a MQTT en %s:%d\n", 
+                   MQTT_BROKER, MQTT_PORT);
+    
+    return true;
+}
+
+// ── Modo Station (original, renombrado) ──────────
+bool MqttBridge::_connectWifiSTA() {
+#ifdef CFG_WIFI_STA
     Serial.printf("[MqttBridge] Conectando a WiFi '%s'...\n", WIFI_SSID);
     WiFi.mode(WIFI_STA);
-    WiFi.setSleep(false);                  // Desactivar modem-sleep para mantener conexión estable
-    WiFi.setTxPower(WIFI_POWER_15dBm);     // TX 15 dBm (brownout detector desactivado)
+    WiFi.setSleep(false);
+    WiFi.setTxPower(WIFI_POWER_15dBm);
     WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
 
     unsigned long start = millis();
@@ -108,6 +199,9 @@ bool MqttBridge::_connectWifi() {
     Serial.printf("\n[MqttBridge] WiFi OK — IP: %s  RSSI: %d dBm\n",
                   WiFi.localIP().toString().c_str(), WiFi.RSSI());
     return true;
+#else
+    return false;  // STA no habilitado
+#endif
 }
 
 // ── Conexión MQTT ────────────────────────────────

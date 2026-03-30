@@ -61,6 +61,8 @@ private:
     uint8_t     _subCount;
 
     bool _connectWifi();
+    bool _connectWifiAP();   // Modo Access Point
+    bool _connectWifiSTA();  // Modo Station
     bool _connectMqtt();
     void _resubscribe();
 

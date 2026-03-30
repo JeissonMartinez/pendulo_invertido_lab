@@ -5,8 +5,8 @@ cd /Users/admin/Documents/Proyectos/pendulo_invertido
 # Para matar procesos de mosquitto
 killall mosquitto 2>/dev/null
 
-# Para activarlo
-mosquitto -c hmi/mosquitto/mosquitto.conf &
+# Para activarlo (con logs verbose)
+mosquitto -c hmi/mosquitto/mosquitto.conf -v &
 
 # 2. Backend
 cenv/bin/uvicorn hmi.backend.app:app --host 0.0.0.0 --port 8000 &
