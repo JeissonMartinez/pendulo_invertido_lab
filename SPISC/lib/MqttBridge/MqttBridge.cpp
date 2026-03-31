@@ -230,11 +230,12 @@ void MqttBridge::_staticCallback(char* topic, byte* payload, unsigned int length
 
     // Crear string null-terminated del payload
     // Limit to buffer size to prevent overflow
-    const unsigned int maxLen = 1023;
+    const unsigned int maxLen = 511;
     unsigned int safeLen = (length < maxLen) ? length : maxLen;
-    char buf[1024];
+    char buf[512];
     memcpy(buf, payload, safeLen);
     buf[safeLen] = '\0';
 
+    // Llamar al callback registrado (MqttComm se encarga de encolar)
     _instance->_callback(topic, buf);
 }

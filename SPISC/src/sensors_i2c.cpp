@@ -1,11 +1,42 @@
 /**
  * sensors_i2c.cpp — Implementación de lectura de sensores I2C.
+ * 
+ * Arquitectura Dual-Core:
+ *   - Wire1 (Bus 1) es compartido entre sensores (Core 0) y OLED (Core 1)
+ *   - Se usa i2cBus1Mutex para acceso thread-safe
  */
 #include "sensors_i2c.h"
 #include "hardware_pins.h"
 #include <AS5600.h>
 
 namespace SensorsI2C {
+
+// ══════════════════════════════════════════════════
+// Mutex I2C para acceso thread-safe (Dual-Core)
+// ══════════════════════════════════════════════════
+SemaphoreHandle_t i2cBus1Mutex = NULL;
+
+void initI2CMutex() {
+    if (i2cBus1Mutex == NULL) {
+        i2cBus1Mutex = xSemaphoreCreateMutex();
+        if (i2cBus1Mutex != NULL) {
+            Serial.println("[sensors] I2C Bus1 mutex inicializado");
+        } else {
+            Serial.println("[sensors] ERROR: No se pudo crear mutex I2C");
+        }
+    }
+}
+
+bool lockI2CBus1(uint32_t waitMs) {
+    if (i2cBus1Mutex == NULL) return true;  // Si no hay mutex, permitir acceso
+    return xSemaphoreTake(i2cBus1Mutex, pdMS_TO_TICKS(waitMs)) == pdTRUE;
+}
+
+void unlockI2CBus1() {
+    if (i2cBus1Mutex != NULL) {
+        xSemaphoreGive(i2cBus1Mutex);
+    }
+}
 
 // ── Buses I2C (usar globales de Arduino para compartir con OLED) ─
 // Wire  = Bus 0 (SDA=21, SCL=22): AS5600 péndulo + MPU6050
@@ -45,7 +76,9 @@ static const unsigned long SENSOR_PERIOD_US = 2000;  // 2 ms (500 Hz)
 // ── I2C error tracking y recovery ───────────
 static int _i2cErrorCount0 = 0;  // Bus 0 (Wire)
 static int _i2cErrorCount1 = 0;  // Bus 1 (Wire1)
-static const int I2C_ERROR_THRESHOLD = 5;  // errores consecutivos para recovery
+static const int I2C_ERROR_THRESHOLD = 5;    // errores consecutivos para recovery
+static const int I2C_MAX_RECOVERY_ATTEMPTS = 3;  // máximo intentos de recovery por ciclo
+static int _recoveryAttempts1 = 0;  // contador de intentos recovery Bus 1
 
 static void _recoverI2CBus(TwoWire &bus, uint8_t sda, uint8_t scl) {
     bus.end();
@@ -158,7 +191,7 @@ void update() {
     if ((now - _lastSensorRead) < SENSOR_PERIOD_US) return;
     _lastSensorRead = now;
 
-    // ── AS5600 #1: Ángulo del péndulo ──────
+    // ── AS5600 #1: Ángulo del péndulo (Bus 0 - sin mutex) ──────
     int rawAngleRaw = _as5600_pend.readAngle();
     if (rawAngleRaw < 0) {
         _i2cErrorCount0++;
@@ -180,21 +213,38 @@ void update() {
     _velAngPend = dAngle / dtSec;
     _prevAnglePend = _anglePend;
 
-    // ── AS5600 #2: Posición del carro ──────
-    // getCumulativePosition() ya acumula revoluciones internamente.
-    // Cada revolución completa = 4096 pasos.
-    int32_t cumPos = _as5600_cart.getCumulativePosition();
-    if (_as5600_cart.lastError() != 0) {
-        _i2cErrorCount1++;
-        if (_i2cErrorCount1 >= I2C_ERROR_THRESHOLD) {
-            _recoverI2CBus(Wire1, I2C_BUS1_SDA, I2C_BUS1_SCL);
+    // ── AS5600 #2: Posición del carro (Bus 1 - CON MUTEX) ──────
+    // Adquirir mutex antes de acceder a Wire1
+    bool gotMutex = lockI2CBus1(10);  // Esperar máximo 10ms
+    if (gotMutex) {
+        int32_t cumPos = _as5600_cart.getCumulativePosition();
+        bool hadError = (_as5600_cart.lastError() != 0);
+        unlockI2CBus1();  // Liberar mutex inmediatamente
+
+        if (hadError) {
+            _i2cErrorCount1++;
+            // Limitar intentos de recovery para evitar bloqueo infinito
+            if (_i2cErrorCount1 >= I2C_ERROR_THRESHOLD && 
+                _recoveryAttempts1 < I2C_MAX_RECOVERY_ATTEMPTS) {
+                // Adquirir mutex para recovery
+                if (lockI2CBus1(20)) {
+                    _recoverI2CBus(Wire1, I2C_BUS1_SDA, I2C_BUS1_SCL);
+                    unlockI2CBus1();
+                }
+                _i2cErrorCount1 = 0;
+                _recoveryAttempts1++;
+                if (_recoveryAttempts1 >= I2C_MAX_RECOVERY_ATTEMPTS) {
+                    Serial.println("[sensors] WARN: Max I2C recovery attempts, skipping Bus1");
+                }
+            }
+        } else {
             _i2cErrorCount1 = 0;
+            _recoveryAttempts1 = 0;  // Reset contador en lectura exitosa
+            // Aplicar offset calibrado para que posMagCm=0 cuando LS INICIO activo
+            _posMagCm = ((cumPos - _posOffset) / 4096.0f) * 360.0f * CM_POR_GRADO;
         }
-    } else {
-        _i2cErrorCount1 = 0;
     }
-    // Aplicar offset calibrado para que posMagCm=0 cuando LS INICIO activo
-    _posMagCm = ((cumPos - _posOffset) / 4096.0f) * 360.0f * CM_POR_GRADO;
+    // Si no se obtuvo mutex, simplemente omitir esta lectura (no bloquear)
 
     // RPM/RPS del encoder magnético (~cada 200ms)
     unsigned long nowMs = millis();
@@ -213,7 +263,7 @@ void update() {
         _lastMagCalc = nowMs;
     }
 
-    // ── MPU6050 ────────────────────────────
+    // ── MPU6050 (Bus 0 - sin mutex) ────────────────────────────
     _mpuRead();
 }
 

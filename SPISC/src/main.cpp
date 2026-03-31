@@ -1,9 +1,22 @@
 /*
  * ═══════════════════════════════════════════════════════════════
- *  main.cpp — Orquestador modular del firmware SPISC.
+ *  main.cpp — Orquestador Dual-Core del firmware SPISC.
  *
- *  Inicializa todos los módulos de hardware compartidos, lee
- *  sensores, aplica seguridad y enruta al modo activo.
+ *  ARQUITECTURA DUAL-CORE:
+ *  ┌─────────────────────────────────────────────────────────────┐
+ *  │  CORE 0 — Sensores y Control (500 Hz, crítico)             │
+ *  │    - Lectura de sensores cada 2ms                          │
+ *  │    - Procesamiento de comandos MQTT (desde cola)           │
+ *  │    - Verificación de seguridad                             │
+ *  │    - Ejecución de modos de control                         │
+ *  └─────────────────────────────────────────────────────────────┘
+ *  ┌─────────────────────────────────────────────────────────────┐
+ *  │  CORE 1 — Comunicación (flexible, no crítico)              │
+ *  │    - MQTT keep-alive y reconexión                          │
+ *  │    - Publicación de telemetría (5 Hz)                      │
+ *  │    - Publicación de estado (2 Hz)                          │
+ *  │    - Actualización de OLED (2 Hz)                          │
+ *  └─────────────────────────────────────────────────────────────┘
  *
  *  Modos soportados: SWEEP_PWM, OPEN_LOOP (extensible).
  * ═══════════════════════════════════════════════════════════════
@@ -12,6 +25,11 @@
 #include <Arduino.h>
 #include "soc/soc.h"
 #include "soc/rtc_cntl_reg.h"
+
+// FreeRTOS
+#include <freertos/FreeRTOS.h>
+#include <freertos/task.h>
+#include <freertos/semphr.h>
 
 // Módulos compartidos
 #include "hardware_pins.h"
@@ -30,19 +48,36 @@
 #include "modes/lazo_abierto_mode.h"
 
 // ══════════════════════════════════════════════════
-// Modo activo
+// Constantes Dual-Core
 // ══════════════════════════════════════════════════
+#define SENSORS_TASK_PERIOD_MS   2      // 500 Hz
+#define SENSORS_TASK_STACK    4096      // bytes
+#define SENSORS_TASK_PRIORITY    5      // Alta prioridad
+
+#define COMM_TASK_STACK       8192      // bytes (JSON + WiFi buffers)
+#define COMM_TASK_PRIORITY       3      // Prioridad media
+#define COMM_TASK_PERIOD_MS     10      // Yield cada 10ms
+
+#define WATCHDOG_TIMEOUT_S       5      // Segundos
+
+// ══════════════════════════════════════════════════
+// Handles de tareas FreeRTOS
+// ══════════════════════════════════════════════════
+static TaskHandle_t taskSensorsHandle = NULL;
+static TaskHandle_t taskCommHandle    = NULL;
+
+// ══════════════════════════════════════════════════
+// Datos compartidos (protegidos por mutex)
+// ══════════════════════════════════════════════════
+SemaphoreHandle_t telemetryMutex = NULL;  // Definición del extern de telemetry_data.h
+static TelemetryPacket sharedTelemetry = {};
 static FirmwareMode activeMode = MODE_IDLE;
 
-// ══════════════════════════════════════════════════
-// Intervalos de publicación
-// ══════════════════════════════════════════════════
-static unsigned long lastTelemetryMs = 0;
-static unsigned long lastStatusMs    = 0;
-static unsigned long lastDisplayMs   = 0;
-
-// Forward declaration
+// Forward declarations
 static const char* getActiveModeStateStr();
+static void buildTelemetry(TelemetryPacket& pkt);
+static void switchMode(FirmwareMode newMode);
+static void onMqttCommand(const char* topic, const char* payload);
 
 // ══════════════════════════════════════════════════
 // Construir paquete de telemetría
@@ -119,7 +154,7 @@ static void switchMode(FirmwareMode newMode) {
 }
 
 // ══════════════════════════════════════════════════
-// Callback MQTT global
+// Callback MQTT (ejecutado en Core 0 via processCommandQueue)
 // ══════════════════════════════════════════════════
 static void onMqttCommand(const char* topic, const char* payload) {
     Safety::markMqttActivity();
@@ -127,7 +162,6 @@ static void onMqttCommand(const char* topic, const char* payload) {
     // Parada de emergencia global
     if (strcmp(topic, TOPIC_CMD_STOP) == 0) {
         Motor::freno();
-        // Pasar también al modo activo
         switch (activeMode) {
             case MODE_SWEEP_PWM:  RangoPwmMode::onCommand(topic, payload); break;
             case MODE_OPEN_LOOP:  LazoAbiertoMode::onCommand(topic, payload); break;
@@ -151,7 +185,6 @@ static void onMqttCommand(const char* topic, const char* payload) {
 
     // Calibración
     if (strcmp(topic, TOPIC_CMD_CALIBRATE) == 0) {
-        // Parsear tipo: {"type":"angle"}, {"type":"position"}, {"type":"mpu"}, {"type":"full"}
         const char* typeKey = strstr(payload, "\"type\"");
         if (typeKey && strstr(typeKey, "\"position\"")) {
             SensorsI2C::resetMagPosition();
@@ -162,13 +195,12 @@ static void onMqttCommand(const char* topic, const char* payload) {
             SensorsI2C::resetMagPosition();
             SensorsI2C::calibrateMPU();
         } else {
-            // "angle" o sin tipo (compatibilidad)
             SensorsI2C::calibrateAngle();
         }
         return;
     }
 
-    // Auto-switch de modo según el tópico del comando
+    // Auto-switch de modo según tópico del comando
     if (strcmp(topic, TOPIC_CMD_SWEEP) == 0 && activeMode != MODE_SWEEP_PWM) {
         switchMode(MODE_SWEEP_PWM);
     } else if (strcmp(topic, TOPIC_CMD_OPENLOOP) == 0 && activeMode != MODE_OPEN_LOOP) {
@@ -183,16 +215,132 @@ static void onMqttCommand(const char* topic, const char* payload) {
     }
 }
 
+// ══════════════════════════════════════════════════════════════════
+// TAREA CORE 0: Sensores y Control (500 Hz, crítico)
+// ══════════════════════════════════════════════════════════════════
+void taskSensorsAndControl(void* pvParameters) {
+    Serial.println("[Core0] Tarea de sensores iniciada");
+    
+    // Inicializar watchdog para esta tarea
+    Safety::initHardwareWatchdog(WATCHDOG_TIMEOUT_S);
+    
+    TickType_t xLastWakeTime = xTaskGetTickCount();
+    const TickType_t xPeriod = pdMS_TO_TICKS(SENSORS_TASK_PERIOD_MS);
+
+    for (;;) {
+        // 0. Alimentar watchdog PRIMERO (evita timeout si I2C se bloquea)
+        Safety::feedWatchdog();
+
+        // 1. Leer sensores (alta frecuencia)
+        SensorsI2C::update();
+        EncoderIR::updateRPM();
+
+        // 2. Verificar limit switches
+        LimitSwitches::checkAndPublishChanges();
+
+        // 3. Safety check
+        Safety::check();
+
+        // 4. Procesar comandos MQTT pendientes (desde cola thread-safe)
+        MqttComm::processCommandQueue();
+
+        // 5. Ejecutar modo activo
+        switch (activeMode) {
+            case MODE_SWEEP_PWM:  RangoPwmMode::loop(); break;
+            case MODE_OPEN_LOOP:  LazoAbiertoMode::loop(); break;
+            default: break;
+        }
+
+        // 6. Actualizar telemetría compartida (para Core 1)
+        if (xSemaphoreTake(telemetryMutex, pdMS_TO_TICKS(1)) == pdTRUE) {
+            buildTelemetry(sharedTelemetry);
+            xSemaphoreGive(telemetryMutex);
+        }
+
+        // Esperar hasta siguiente período (timing preciso)
+        vTaskDelayUntil(&xLastWakeTime, xPeriod);
+    }
+}
+
+// ══════════════════════════════════════════════════════════════════
+// TAREA CORE 1: Comunicación (flexible, no crítico)
+// ══════════════════════════════════════════════════════════════════
+void taskCommunication(void* pvParameters) {
+    Serial.println("[Core1] Tarea de comunicación iniciada");
+    
+    unsigned long lastTelemetryMs = 0;
+    unsigned long lastStatusMs    = 0;
+    unsigned long lastDisplayMs   = 0;
+
+    for (;;) {
+        unsigned long now = millis();
+
+        // 1. MQTT keep-alive (reconexión automática)
+        MqttComm::loop();
+
+        // Mantener safety alive mientras MQTT conectado
+        if (MqttComm::isConnected()) {
+            Safety::markMqttActivity();
+        }
+
+        // 2. Publicar telemetría @ 5 Hz (cada 200ms)
+        if ((now - lastTelemetryMs) >= TELEMETRY_INTERVAL_MS) {
+            lastTelemetryMs = now;
+
+            TelemetryPacket pkt;
+            if (xSemaphoreTake(telemetryMutex, pdMS_TO_TICKS(5)) == pdTRUE) {
+                pkt = sharedTelemetry;  // Copia local
+                xSemaphoreGive(telemetryMutex);
+            }
+            MqttComm::publishTelemetry(pkt);
+        }
+
+        // 3. Publicar estado @ 2 Hz (cada 500ms)
+        if ((now - lastStatusMs) >= STATUS_INTERVAL_MS) {
+            lastStatusMs = now;
+
+            TelemetryPacket pkt;
+            if (xSemaphoreTake(telemetryMutex, pdMS_TO_TICKS(5)) == pdTRUE) {
+                pkt = sharedTelemetry;
+                xSemaphoreGive(telemetryMutex);
+            }
+
+            MqttComm::publishStatus(
+                getActiveModeStateStr(), activeMode,
+                pkt.ls_start, pkt.ls_end,
+                MqttComm::getWifiRssi(),
+                SensorsI2C::isAngleCalibrated(),
+                SensorsI2C::isMagPosCalibrated(),
+                SensorsI2C::isMPUCalibrated());
+        }
+
+        // 4. Actualizar OLED @ 2 Hz (puede bloquear 92ms, no afecta sensores)
+        if ((now - lastDisplayMs) >= 500) {
+            lastDisplayMs = now;
+
+            TelemetryPacket pkt;
+            if (xSemaphoreTake(telemetryMutex, pdMS_TO_TICKS(5)) == pdTRUE) {
+                pkt = sharedTelemetry;
+                xSemaphoreGive(telemetryMutex);
+            }
+            DisplayOLED::update(pkt, getActiveModeStateStr());
+        }
+
+        // Yield para no monopolizar CPU
+        vTaskDelay(pdMS_TO_TICKS(COMM_TASK_PERIOD_MS));
+    }
+}
+
 // ══════════════════════════════════════════════════
 // Setup
 // ══════════════════════════════════════════════════
 void setup() {
-    // Desactivar brownout detector (USB no entrega suficiente corriente para WiFi)
+    // Desactivar brownout detector
     WRITE_PERI_REG(RTC_CNTL_BROWN_OUT_REG, 0);
 
     Serial.begin(115200);
     delay(500);
-    Serial.println("\n[main] ═══ SPISC — Firmware Modular ═══");
+    Serial.println("\n[main] ═══ SPISC — Firmware Dual-Core ═══");
 
     // 1. Motor
     Motor::begin();
@@ -206,92 +354,77 @@ void setup() {
     LimitSwitches::begin();
     Serial.println("[main] Limit switches OK");
 
-    // 4. Sensores I2C (AS5600x2 + MPU6050)
+    // 4. Mutex I2C para acceso thread-safe (antes de sensores)
+    SensorsI2C::initI2CMutex();
+
+    // 5. Sensores I2C (AS5600x2 + MPU6050)
     SensorsI2C::begin();
     Serial.println("[main] Sensores I2C OK");
 
-    // 5. OLED
+    // 6. OLED
     if (DisplayOLED::begin()) {
-        DisplayOLED::showMessage("SPISC Pendulum", "Conectando WiFi...");
+        DisplayOLED::showMessage("SPISC Dual-Core", "Iniciando...");
     }
 
-    // 6. WiFi + MQTT
+    // 7. Crear mutex y cola para comunicación inter-core
+    initTelemetryMutex();
+    MqttComm::initCommandQueue();
+    Serial.println("[main] Mutex y cola OK");
+
+    // 8. WiFi + MQTT (con callback que encola comandos)
     MqttComm::onCommand(onMqttCommand);
     if (MqttComm::begin()) {
         Serial.println("[main] WiFi + MQTT OK");
-        DisplayOLED::showMessage("SPISC Pendulum", "MQTT conectado!");
+        DisplayOLED::showMessage("SPISC Dual-Core", "MQTT conectado!");
     } else {
         Serial.println("[main] WiFi no conectó (reintentará)");
-        DisplayOLED::showMessage("SPISC Pendulum", "WiFi pendiente...");
+        DisplayOLED::showMessage("SPISC Dual-Core", "WiFi pendiente...");
     }
 
-    // 7. Seguridad
-    Safety::setMqttTimeout(2000);  // Freno si no hay MQTT en 2s
+    // 10. Seguridad (timeout aumentado para tolerar reconexiones WiFi)
+    Safety::setMqttTimeout(5000);
     Serial.println("[main] Safety OK");
 
-    // Modo inicial: IDLE
+    // 9. Modo inicial
     activeMode = MODE_IDLE;
-    Serial.println("[main] Listo. Esperando comandos MQTT...\n");
+
+    // ═══════════════════════════════════════════════════════════════
+    // CREAR TAREAS EN CORES SEPARADOS
+    // ═══════════════════════════════════════════════════════════════
+
+    // Tarea de sensores en CORE 0 (prioridad alta)
+    xTaskCreatePinnedToCore(
+        taskSensorsAndControl,      // Función
+        "Sensors",                  // Nombre
+        SENSORS_TASK_STACK,         // Stack (bytes)
+        NULL,                       // Parámetros
+        SENSORS_TASK_PRIORITY,      // Prioridad (alta)
+        &taskSensorsHandle,         // Handle
+        0                           // Core 0
+    );
+    Serial.println("[main] Tarea Sensors creada en Core 0");
+
+    // Tarea de comunicación en CORE 1 (prioridad media)
+    xTaskCreatePinnedToCore(
+        taskCommunication,          // Función
+        "Comm",                     // Nombre
+        COMM_TASK_STACK,            // Stack mayor para JSON + WiFi
+        NULL,                       // Parámetros
+        COMM_TASK_PRIORITY,         // Prioridad media
+        &taskCommHandle,            // Handle
+        1                           // Core 1
+    );
+    Serial.println("[main] Tarea Comm creada en Core 1");
+
+    Serial.println("[main] ═══ Sistema dual-core activo ═══");
+    Serial.println("[main] Esperando comandos MQTT...\n");
 }
 
 // ══════════════════════════════════════════════════
-// Loop
+// Loop — Vacío (todo corre en tareas FreeRTOS)
 // ══════════════════════════════════════════════════
 void loop() {
-    unsigned long now = millis();
-
-    // 1. MQTT keep-alive
-    MqttComm::loop();
-
-    // Mantener safety alive mientras MQTT está conectado
-    if (MqttComm::isConnected()) {
-        Safety::markMqttActivity();
-    }
-
-    // 2. Leer sensores (alta frecuencia)
-    SensorsI2C::update();
-    EncoderIR::updateRPM();
-    yield();  // Dar tiempo al stack WiFi tras I2C
-
-    // 3. Publicar cambios de limit switches
-    LimitSwitches::checkAndPublishChanges();
-
-    // 4. Safety
-    Safety::check();
-
-    // 5. Ejecutar modo activo
-    switch (activeMode) {
-        case MODE_SWEEP_PWM:  RangoPwmMode::loop(); break;
-        case MODE_OPEN_LOOP:  LazoAbiertoMode::loop(); break;
-        default: break;  // IDLE: nada
-    }
-
-    // 6. Publicar telemetría periódica
-    if ((now - lastTelemetryMs) >= TELEMETRY_INTERVAL_MS) {
-        lastTelemetryMs = now;
-        TelemetryPacket pkt = {};
-        buildTelemetry(pkt);
-        MqttComm::publishTelemetry(pkt);
-    }
-
-    // 7. Publicar estado periódico
-    if ((now - lastStatusMs) >= STATUS_INTERVAL_MS) {
-        lastStatusMs = now;
-        MqttComm::publishStatus(
-            getActiveModeStateStr(), activeMode,
-            LimitSwitches::isStartActive(),
-            LimitSwitches::isEndActive(),
-            MqttComm::getWifiRssi(),
-            SensorsI2C::isAngleCalibrated(),
-            SensorsI2C::isMagPosCalibrated(),
-            SensorsI2C::isMPUCalibrated());
-    }
-
-    // 8. Actualizar OLED (~2 Hz para reducir bloqueo I2C)
-    if ((now - lastDisplayMs) >= 500) {
-        lastDisplayMs = now;
-        TelemetryPacket pkt = {};
-        buildTelemetry(pkt);
-        DisplayOLED::update(pkt, getActiveModeStateStr());
-    }
+    // Todo el trabajo se hace en las tareas FreeRTOS
+    // Este loop se ejecuta en Core 1 con prioridad baja
+    vTaskDelay(portMAX_DELAY);
 }

@@ -3,12 +3,18 @@
  *   - AS5600 #1 (ángulo péndulo, Bus 0)
  *   - AS5600 #2 (posición carro magnética, Bus 1)
  *   - MPU6050   (IMU 6 ejes, Bus 0)
+ * 
+ * Arquitectura Dual-Core:
+ *   - Wire1 (Bus 1) es compartido entre sensores (Core 0) y OLED (Core 1)
+ *   - Se usa un mutex para acceso thread-safe
  */
 #ifndef SENSORS_I2C_H
 #define SENSORS_I2C_H
 
 #include <Arduino.h>
 #include <Wire.h>
+#include <freertos/FreeRTOS.h>
+#include <freertos/semphr.h>
 
 namespace SensorsI2C {
 
@@ -52,6 +58,26 @@ float getRoll();              // grados (filtro complementario)
 /** Calibrar offsets del giroscopio (MPU debe estar en reposo). */
 void calibrateMPU();
 bool isMPUCalibrated();
+
+// ══════════════════════════════════════════════════
+// Mutex I2C para acceso thread-safe (Dual-Core)
+// ══════════════════════════════════════════════════
+
+/** Mutex para Bus 1 (Wire1) - compartido con OLED */
+extern SemaphoreHandle_t i2cBus1Mutex;
+
+/** Inicializar mutex I2C. Llamar en setup() antes de crear tareas. */
+void initI2CMutex();
+
+/** 
+ * Adquirir mutex para Wire1.
+ * @param waitMs Tiempo máximo de espera (ms). 0 = intentar sin bloquear.
+ * @return true si se adquirió el mutex.
+ */
+bool lockI2CBus1(uint32_t waitMs = 50);
+
+/** Liberar mutex de Wire1. */
+void unlockI2CBus1();
 
 }  // namespace SensorsI2C
 

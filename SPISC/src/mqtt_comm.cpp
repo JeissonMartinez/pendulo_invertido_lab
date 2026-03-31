@@ -1,5 +1,9 @@
 /**
  * mqtt_comm.cpp — Implementación de comunicación MQTT unificada.
+ * 
+ * Arquitectura Dual-Core:
+ * - La cola de comandos permite procesar MQTT en Core 0 sin bloqueos
+ * - Los comandos se encolan desde el callback (Core 1) y procesan en taskSensorsAndControl (Core 0)
  */
 #include "mqtt_comm.h"
 #include "hardware_pins.h"
@@ -9,6 +13,20 @@ namespace MqttComm {
 
 static MqttBridge _bridge;
 static char _jsonBuf[768];   // Buffer para JSON (ampliado para telemetría extendida)
+
+// ══════════════════════════════════════════════════
+// Cola de comandos thread-safe
+// ══════════════════════════════════════════════════
+static QueueHandle_t _commandQueue = NULL;
+static CommandCallback _commandCallback = nullptr;
+
+// ══════════════════════════════════════════════════
+// Callback interno que encola comandos (Dual-Core)
+// ══════════════════════════════════════════════════
+static void _internalCallback(const char* topic, const char* payload) {
+    // Encolar comando para procesamiento thread-safe en Core 0
+    enqueueCommand(topic, payload);
+}
 
 bool begin() {
     bool ok = _bridge.begin();
@@ -21,6 +39,9 @@ bool begin() {
         _bridge.subscribe(TOPIC_CMD_STOP);
         _bridge.subscribe(TOPIC_CMD_SWEEP);
         _bridge.subscribe(TOPIC_CMD_OPENLOOP);
+        
+        // Registrar callback interno que encola comandos
+        _bridge.onMessage(_internalCallback);
     }
     return ok;
 }
@@ -30,7 +51,9 @@ void loop() {
 }
 
 void onCommand(CommandCallback cb) {
-    _bridge.onMessage(cb);
+    _commandCallback = cb;  // Guardar callback para processCommandQueue
+    // Ya no registramos con _bridge.onMessage() aquí
+    // El callback interno ya está registrado en begin()
 }
 
 void publishTelemetry(const TelemetryPacket& p) {
@@ -97,5 +120,57 @@ bool publish(const char* topic, const char* payload) {
 
 int getWifiRssi()  { return _bridge.getWifiRssi(); }
 bool isConnected() { return _bridge.isMqttConnected(); }
+
+// ══════════════════════════════════════════════════
+// Implementación de cola de comandos (Dual-Core)
+// ══════════════════════════════════════════════════
+
+void initCommandQueue() {
+    if (_commandQueue == NULL) {
+        _commandQueue = xQueueCreate(10, sizeof(MqttCommand));
+        if (_commandQueue == NULL) {
+            Serial.println("[MqttComm] Error creando cola de comandos!");
+        } else {
+            Serial.println("[MqttComm] Cola de comandos inicializada");
+        }
+    }
+}
+
+bool enqueueCommand(const char* topic, const char* payload) {
+    if (_commandQueue == NULL) {
+        Serial.println("[MqttComm] Cola no inicializada, procesando directo");
+        // Fallback: procesar directamente (modo single-core)
+        if (_commandCallback) {
+            _commandCallback(topic, payload);
+        }
+        return true;
+    }
+    
+    MqttCommand cmd;
+    strncpy(cmd.topic, topic, sizeof(cmd.topic) - 1);
+    cmd.topic[sizeof(cmd.topic) - 1] = '\0';
+    strncpy(cmd.payload, payload, sizeof(cmd.payload) - 1);
+    cmd.payload[sizeof(cmd.payload) - 1] = '\0';
+    
+    // Intentar encolar sin bloquear (xQueueSend con timeout 0)
+    if (xQueueSend(_commandQueue, &cmd, 0) != pdTRUE) {
+        Serial.println("[MqttComm] Cola de comandos llena!");
+        return false;
+    }
+    
+    return true;
+}
+
+void processCommandQueue() {
+    if (_commandQueue == NULL || _commandCallback == NULL) {
+        return;
+    }
+    
+    MqttCommand cmd;
+    // Procesar todos los comandos pendientes sin bloquear
+    while (xQueueReceive(_commandQueue, &cmd, 0) == pdTRUE) {
+        _commandCallback(cmd.topic, cmd.payload);
+    }
+}
 
 }  // namespace MqttComm

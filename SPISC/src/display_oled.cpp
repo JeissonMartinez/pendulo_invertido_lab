@@ -1,10 +1,16 @@
 /**
  * display_oled.cpp — Implementación OLED SSD1306 en Bus 1.
+ * 
  * Nota: La OLED se movió al Bus 1 (GPIO 18/19) para dejar
  *       espacio al MPU6050 en el Bus 0 (GPIO 21/22).
+ * 
+ * Arquitectura Dual-Core:
+ *   - Wire1 (Bus 1) es compartido entre sensores (Core 0) y OLED (Core 1)
+ *   - Se usa i2cBus1Mutex de SensorsI2C para acceso thread-safe
  */
 #include "display_oled.h"
 #include "hardware_pins.h"
+#include "sensors_i2c.h"  // Para mutex I2C
 #include <Wire.h>
 #include <Adafruit_GFX.h>
 #include <Adafruit_SSD1306.h>
@@ -17,22 +23,40 @@ static Adafruit_SSD1306* _display = nullptr;
 
 bool begin() {
     // Wire1 ya debe estar inicializado por SensorsI2C::begin()
+    // Adquirir mutex para inicialización
+    if (!SensorsI2C::lockI2CBus1(100)) {
+        Serial.println("[oled] ERROR: No se pudo adquirir mutex I2C para init");
+        return false;
+    }
+    
     _display = new Adafruit_SSD1306(SCREEN_WIDTH, SCREEN_HEIGHT, &_wire);
-    if (!_display->begin(SSD1306_SWITCHCAPVCC, OLED_ADDR)) {
+    bool ok = _display->begin(SSD1306_SWITCHCAPVCC, OLED_ADDR);
+    
+    if (!ok) {
         Serial.println("[oled] SSD1306 no detectado en Bus 1");
         delete _display;
         _display = nullptr;
+        SensorsI2C::unlockI2CBus1();
         return false;
     }
+    
     _display->clearDisplay();
     _display->setTextColor(SSD1306_WHITE);
     _display->display();
+    
+    SensorsI2C::unlockI2CBus1();
     Serial.println("[oled] OLED inicializado en Bus 1");
     return true;
 }
 
 void update(const TelemetryPacket& pkt, const char* stateStr) {
     if (!_display) return;
+
+    // Adquirir mutex antes de acceder a Wire1
+    if (!SensorsI2C::lockI2CBus1(30)) {
+        // No se pudo adquirir mutex, omitir esta actualización
+        return;
+    }
 
     _display->clearDisplay();
     _display->setTextSize(1);
@@ -84,10 +108,18 @@ void update(const TelemetryPacket& pkt, const char* stateStr) {
     _display->print(pkt.rpm_ir, 0);
 
     _display->display();
+    
+    SensorsI2C::unlockI2CBus1();  // Liberar mutex
 }
 
 void showMessage(const char* line1, const char* line2) {
     if (!_display) return;
+    
+    // Adquirir mutex antes de acceder a Wire1
+    if (!SensorsI2C::lockI2CBus1(50)) {
+        return;  // Omitir si no se puede adquirir
+    }
+    
     _display->clearDisplay();
     _display->setTextSize(1);
     _display->setTextColor(SSD1306_WHITE);
@@ -98,6 +130,8 @@ void showMessage(const char* line1, const char* line2) {
         _display->print(line2);
     }
     _display->display();
+    
+    SensorsI2C::unlockI2CBus1();
 }
 
 }  // namespace DisplayOLED

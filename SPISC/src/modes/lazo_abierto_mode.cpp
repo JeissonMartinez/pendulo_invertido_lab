@@ -256,6 +256,7 @@ void loop() {
             EncoderIR::resetPulseCount();
             Serial.println("[openloop] Home (inicio) alcanzado.");
             _changeState(OL_READY);
+            break;  // Salir inmediatamente para evitar underflow de timeout
         }
         // Safety timeout (30s)
         if ((now - _stateEntry) > 30000) {
@@ -274,6 +275,7 @@ void loop() {
             EncoderIR::resetPulseCount();
             Serial.println("[openloop] Home (fin) alcanzado.");
             _changeState(OL_READY);
+            break;  // Salir inmediatamente para evitar underflow de timeout
         }
         // Safety timeout (30s)
         if ((now - _stateEntry) > 30000) {

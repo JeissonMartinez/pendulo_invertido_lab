@@ -1,11 +1,17 @@
 /**
  * telemetry_data.h — Estructuras de datos de telemetría unificada.
  * Contiene todos los campos de sensores del sistema.
+ * 
+ * Arquitectura Dual-Core:
+ * - Los datos de telemetría se comparten entre Core 0 (sensores) y Core 1 (comunicación)
+ * - Se protegen con mutex para acceso thread-safe
  */
 #ifndef TELEMETRY_DATA_H
 #define TELEMETRY_DATA_H
 
 #include <Arduino.h>
+#include <freertos/FreeRTOS.h>
+#include <freertos/semphr.h>
 
 // ══════════════════════════════════════════════════
 // Dirección del motor
@@ -114,6 +120,37 @@ inline FirmwareMode strToFirmwareMode(const char* s) {
     if (strcmp(s, "MRAC")       == 0) return MODE_MRAC;
     if (strcmp(s, "MPC")        == 0) return MODE_MPC;
     return MODE_IDLE;
+}
+
+// ══════════════════════════════════════════════════
+// Thread-safety para datos compartidos (Dual-Core)
+// ══════════════════════════════════════════════════
+
+/** Mutex global para acceso a telemetría compartida */
+extern SemaphoreHandle_t telemetryMutex;
+
+/** Inicializar mutex de telemetría. Llamar antes de crear tareas. */
+inline void initTelemetryMutex() {
+    if (telemetryMutex == NULL) {
+        telemetryMutex = xSemaphoreCreateMutex();
+    }
+}
+
+/** 
+ * Adquirir mutex para acceso seguro a telemetría.
+ * @param waitMs Tiempo máximo de espera (ms). 0 = intentar sin bloquear.
+ * @return true si se adquirió el mutex.
+ */
+inline bool lockTelemetry(uint32_t waitMs = portMAX_DELAY) {
+    if (telemetryMutex == NULL) return false;
+    return xSemaphoreTake(telemetryMutex, pdMS_TO_TICKS(waitMs)) == pdTRUE;
+}
+
+/** Liberar mutex de telemetría. */
+inline void unlockTelemetry() {
+    if (telemetryMutex != NULL) {
+        xSemaphoreGive(telemetryMutex);
+    }
 }
 
 #endif // TELEMETRY_DATA_H
