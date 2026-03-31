@@ -1,7 +1,7 @@
 <template>
   <div class="tab-lazo-abierto">
 
-    <!-- ═══════════ FILA SUPERIOR: CONTROLES + INDICADORES ═══════════ -->
+    <!-- ═══════════ FILA SUPERIOR: CONTROLES + ANIMACIÓN + INDICADORES ═══════════ -->
     <div class="ol-top-row">
 
       <!-- Controles Lazo Abierto -->
@@ -9,182 +9,196 @@
         <div class="card-header">Control Lazo Abierto</div>
         <div class="card-body ol-controles">
 
-          <!-- Estado -->
-          <div class="controles-fila">
-            <div class="ol-estado">
-              <span class="control-label">Estado</span>
-              <span class="badge" :class="claseBadgeOL">{{ estadoOLTexto }}</span>
+          <!-- Grid de controles superiores: Calibración + Posicionamiento + Dirección -->
+          <div class="ol-grid-superior">
+
+            <!-- Calibración -->
+            <div class="ol-seccion">
+              <span class="control-label">Calibración</span>
+              <div class="seccion-botones">
+                <button
+                  class="btn btn-calibrar"
+                  @click="store.calibrar('angle')"
+                  :disabled="!store.wsConectado || esOLActivo"
+                  :class="{ 'cal-ok': store.estado.calibrated_angle }"
+                >
+                  🎯 Ángulo
+                </button>
+                <button
+                  class="btn btn-calibrar"
+                  @click="store.calibrar('position')"
+                  :disabled="!store.wsConectado || esOLActivo"
+                  :class="{ 'cal-ok': store.estado.calibrated_position }"
+                >
+                  📏 Pos. Mag.
+                </button>
+                <button
+                  class="btn btn-calibrar"
+                  @click="store.calibrar('mpu')"
+                  :disabled="!store.wsConectado || esOLActivo"
+                  :class="{ 'cal-ok': store.estado.calibrated_mpu }"
+                >
+                  🔄 MPU
+                </button>
+              </div>
             </div>
-            <div v-if="store.openLoopState.lastPosition" class="ol-posicion">
-              <span class="control-label">Posición</span>
-              <span class="badge badge-posicion">
-                {{ store.openLoopState.lastPosition === 'start' ? '⬅ INICIO' : '➡ FIN' }}
-              </span>
+
+            <!-- Posicionamiento -->
+            <div class="ol-seccion">
+              <span class="control-label">Posicionamiento</span>
+              <div class="seccion-botones">
+                <button
+                  class="btn btn-home"
+                  @click="store.homeCarro()"
+                  :disabled="!puedeComando"
+                >
+                  ⬅ Home
+                </button>
+                <button
+                  class="btn btn-end"
+                  @click="store.endCarro()"
+                  :disabled="!puedeComando"
+                >
+                  End ➡
+                </button>
+              </div>
             </div>
+
+            <!-- Dirección -->
+            <div class="ol-seccion">
+              <span class="control-label">Dirección</span>
+              <div class="seccion-botones direccion-btns">
+                <button
+                  class="btn btn-dir"
+                  :class="{ active: directionVal === 'auto' }"
+                  @click="directionVal = 'auto'"
+                >
+                  ⬅➡ Auto
+                </button>
+                <button
+                  class="btn btn-dir"
+                  :class="{ active: directionVal === 'forward' }"
+                  @click="directionVal = 'forward'"
+                >
+                  ➡ Adelante
+                </button>
+                <button
+                  class="btn btn-dir"
+                  :class="{ active: directionVal === 'backward' }"
+                  @click="directionVal = 'backward'"
+                >
+                  ⬅ Atrás
+                </button>
+              </div>
+            </div>
+
           </div>
 
-          <!-- Homing buttons -->
-          <div class="ol-homing">
-            <span class="control-label">Posicionamiento</span>
-            <div class="homing-botones">
-              <button
-                class="btn btn-home"
-                @click="store.homeCarro()"
-                :disabled="!puedeComando"
-              >
-                ⬅ HOME (Inicio)
-              </button>
-              <button
-                class="btn btn-end"
-                @click="store.endCarro()"
-                :disabled="!puedeComando"
-              >
-                END (Fin) ➡
-              </button>
+          <!-- Sección Impulso -->
+          <div class="ol-seccion-impulso">
+            <span class="control-label">Impulso</span>
+
+            <div class="impulso-grid">
+              <!-- Sliders de PWM y Duración -->
+              <div class="impulso-sliders">
+                <!-- PWM -->
+                <div class="ol-param">
+                  <div class="param-header">
+                    <span class="param-label">PWM</span>
+                    <input
+                      type="number"
+                      class="param-input"
+                      v-model.number="pwmVal"
+                      min="200"
+                      max="1023"
+                      step="10"
+                    />
+                  </div>
+                  <input
+                    type="range"
+                    class="param-slider"
+                    v-model.number="pwmVal"
+                    min="200"
+                    max="1023"
+                    step="10"
+                  />
+                  <div class="param-range-labels">
+                    <span>200</span><span>1023</span>
+                  </div>
+                </div>
+
+                <!-- Duración -->
+                <div class="ol-param">
+                  <div class="param-header">
+                    <span class="param-label">Duración (s)</span>
+                    <input
+                      type="number"
+                      class="param-input"
+                      v-model.number="durationVal"
+                      min="0.1"
+                      max="3.0"
+                      step="0.1"
+                    />
+                  </div>
+                  <input
+                    type="range"
+                    class="param-slider"
+                    v-model.number="durationVal"
+                    min="0.1"
+                    max="3.0"
+                    step="0.1"
+                  />
+                  <div class="param-range-labels">
+                    <span>0.1s</span><span>3.0s</span>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Botones de acción -->
+              <div class="impulso-acciones">
+                <button
+                  class="btn btn-enviar"
+                  @click="enviar"
+                  :disabled="!puedeEnviarImpulso"
+                >
+                  🚀 ENVIAR IMPULSO
+                </button>
+                <button
+                  class="btn btn-detener"
+                  @click="store.detenerMotor()"
+                  :disabled="!store.wsConectado"
+                >
+                  ⬛ DETENER
+                </button>
+              </div>
             </div>
+
           </div>
 
-          <!-- Calibración de sensores -->
-          <div class="ol-calibracion">
-            <span class="control-label">Calibración</span>
-            <div class="calibracion-botones">
-              <button
-                class="btn btn-calibrar"
-                @click="store.calibrar('angle')"
-                :disabled="!store.wsConectado || esOLActivo"
-              >
-                🎯 Ángulo
-                <span class="cal-badge" :class="store.estado.calibrated_angle ? 'cal-ok' : 'cal-pending'">{{ store.estado.calibrated_angle ? '✔' : '⚠' }}</span>
-              </button>
-              <button
-                class="btn btn-calibrar"
-                @click="store.calibrar('position')"
-                :disabled="!store.wsConectado || esOLActivo"
-              >
-                📏 Pos. Mag
-                <span class="cal-badge" :class="store.estado.calibrated_position ? 'cal-ok' : 'cal-pending'">{{ store.estado.calibrated_position ? '✔' : '⚠' }}</span>
-              </button>
-              <button
-                class="btn btn-calibrar"
-                @click="store.calibrar('mpu')"
-                :disabled="!store.wsConectado || esOLActivo"
-              >
-                🔄 MPU
-                <span class="cal-badge" :class="store.estado.calibrated_mpu ? 'cal-ok' : 'cal-pending'">{{ store.estado.calibrated_mpu ? '✔' : '⚠' }}</span>
-              </button>
-            </div>
-          </div>
-
-          <!-- PWM slider + input -->
-          <div class="ol-param">
-            <div class="param-header">
-              <span class="control-label">PWM</span>
-              <input
-                type="number"
-                class="param-input"
-                v-model.number="pwmVal"
-                min="200"
-                max="1023"
-                step="10"
-              />
-            </div>
-            <input
-              type="range"
-              class="param-slider"
-              v-model.number="pwmVal"
-              min="200"
-              max="1023"
-              step="10"
-            />
-            <div class="param-range-labels">
-              <span>200</span><span>1023</span>
-            </div>
-          </div>
-
-          <!-- Duration slider + input -->
-          <div class="ol-param">
-            <div class="param-header">
-              <span class="control-label">Duración (s)</span>
-              <input
-                type="number"
-                class="param-input"
-                v-model.number="durationVal"
-                min="0.1"
-                max="3.0"
-                step="0.1"
-              />
-            </div>
-            <input
-              type="range"
-              class="param-slider"
-              v-model.number="durationVal"
-              min="0.1"
-              max="3.0"
-              step="0.1"
-            />
-            <div class="param-range-labels">
-              <span>0.1s</span><span>3.0s</span>
-            </div>
-          </div>
-
-          <!-- Dirección del impulso -->
-          <div class="ol-direccion">
-            <span class="control-label">Dirección</span>
-            <div class="direccion-opciones">
-              <label class="dir-option" :class="{ active: directionVal === 'auto' }">
-                <input type="radio" v-model="directionVal" value="auto" />
-                ⬅➡ AUTO
-              </label>
-              <label class="dir-option" :class="{ active: directionVal === 'forward' }">
-                <input type="radio" v-model="directionVal" value="forward" />
-                ➡ ADELANTE
-              </label>
-              <label class="dir-option" :class="{ active: directionVal === 'backward' }">
-                <input type="radio" v-model="directionVal" value="backward" />
-                ⬅ ATRÁS
-              </label>
-            </div>
-          </div>
-
-          <!-- Acción -->
-          <div class="ol-acciones">
-            <button
-              class="btn btn-enviar"
-              @click="enviar"
-              :disabled="!puedeEnviarImpulso"
-            >
-              🚀 ENVIAR IMPULSO
-            </button>
-
-            <button
-              class="btn btn-detener"
-              @click="store.detenerMotor()"
-              :disabled="!store.wsConectado"
-            >
-              ⬛ DETENER
-            </button>
-          </div>
         </div>
+      </div>
+
+      <!-- Animación del Péndulo -->
+      <div class="animacion-wrapper">
+        <AnimacionPendulo />
       </div>
 
       <!-- Indicadores de todos los sensores -->
       <div class="card ol-card-indicadores">
         <div class="card-header">Indicadores</div>
         <div class="card-body">
-          <IndicadoresLazoAbierto />
+          <IndicadoresTelemetria />
         </div>
       </div>
 
     </div>
 
-    <!-- ═══════════ FILA CENTRAL: ANIMACIÓN + GRÁFICOS ═══════════ -->
+    <!-- ═══════════ FILA CENTRAL: GRÁFICOS 2x2 ═══════════ -->
     <div class="ol-middle-row">
-      <div class="animacion-wrapper">
-        <AnimacionPendulo />
-      </div>
-      <div class="graficos-wrapper">
-        <GraficosTelemetria :graficos-default="['angle_pend', 'pos_mag_cm', 'pwm', 'rpm_ir']" />
-      </div>
+      <GraficosTelemetria 
+        :graficos-default="['angulo', 'posicion', 'pwm', 'rpm']" 
+        layout="grid"
+      />
     </div>
 
     <!-- ═══════════ FILA INFERIOR: RESULTADOS ═══════════ -->
@@ -200,7 +214,7 @@ import { ref, computed } from 'vue'
 import { usePendulumStore } from '../../stores/pendulumStore'
 import AnimacionPendulo from '../AnimacionPendulo.vue'
 import GraficosTelemetria from '../GraficosTelemetria.vue'
-import IndicadoresLazoAbierto from '../IndicadoresLazoAbierto.vue'
+import IndicadoresTelemetria from '../IndicadoresTelemetria.vue'
 import ResultadosLazoAbierto from '../ResultadosLazoAbierto.vue'
 
 const store = usePendulumStore()
@@ -227,27 +241,6 @@ const puedeEnviarImpulso = computed(() =>
 function enviar() {
   store.enviarImpulso(pwmVal.value, durationVal.value, directionVal.value)
 }
-
-const estadoOLTexto = computed(() => {
-  const mapa = {
-    OL_IDLE: 'Inactivo',
-    OL_HOMING_START: 'Buscando inicio...',
-    OL_HOMING_END: 'Buscando fin...',
-    OL_READY: 'Listo',
-    OL_IMPULSE_RUNNING: 'Impulso activo',
-    OL_STOPPED: 'Detenido',
-  }
-  return mapa[store.openLoopState.status] || store.openLoopState.status
-})
-
-const claseBadgeOL = computed(() => {
-  const s = store.openLoopState.status
-  if (s === 'OL_IDLE') return 'badge-idle'
-  if (s === 'OL_READY' || s === 'OL_STOPPED') return 'badge-listo'
-  if (s === 'OL_HOMING_START' || s === 'OL_HOMING_END') return 'badge-calibrando'
-  if (s === 'OL_IMPULSE_RUNNING') return 'badge-controlando'
-  return 'badge-idle'
-})
 </script>
 
 <style scoped>
@@ -260,21 +253,45 @@ const claseBadgeOL = computed(() => {
   overflow-y: auto;
 }
 
-/* ── Fila superior: controles + indicadores ── */
+/* ── Fila superior: controles + animación + indicadores ── */
 .ol-top-row {
   display: flex;
   gap: 16px;
   flex-shrink: 0;
+  align-items: stretch;
 }
 
 .ol-card-controles {
-  flex: 1 1 50%;
+  flex: 1 1 35%;
   min-width: 0;
+  overflow: visible;
+}
+
+.animacion-wrapper {
+  flex: 0 0 30%;
+  min-width: 280px;
+  display: flex;
+  align-items: stretch;
+}
+
+/* Hacer que AnimacionPendulo ocupe todo el alto */
+.animacion-wrapper :deep(.card) {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+}
+
+.animacion-wrapper :deep(.card-body) {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .ol-card-indicadores {
-  flex: 1 1 50%;
+  flex: 1 1 35%;
   min-width: 0;
+  overflow: visible;
 }
 
 .ol-controles {
@@ -283,39 +300,55 @@ const claseBadgeOL = computed(() => {
   gap: 12px;
 }
 
-.controles-fila {
+/* ── Grid superior: Calibración + Posicionamiento + Dirección ── */
+.ol-grid-superior {
   display: flex;
-  gap: 16px;
-  align-items: flex-start;
-}
-
-.ol-estado, .ol-posicion {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-
-.ol-homing {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-
-.homing-botones {
-  display: flex;
-  gap: 8px;
-}
-
-.ol-calibracion {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-
-.calibracion-botones {
-  display: flex;
-  gap: 6px;
   flex-wrap: wrap;
+  gap: 12px;
+}
+
+.ol-seccion {
+  flex: 1 1 auto;
+  min-width: 100px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.seccion-botones {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+/* ── Sección Impulso ── */
+.ol-seccion-impulso {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding-top: 12px;
+  border-top: 1px solid var(--md-outline-variant, #E0E0E0);
+}
+
+.impulso-grid {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 12px;
+  align-items: start;
+}
+
+.impulso-sliders {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.impulso-acciones {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  justify-content: flex-start;
+  min-width: 140px;
 }
 
 .btn-calibrar {
@@ -332,44 +365,31 @@ const claseBadgeOL = computed(() => {
   background: #E8D5F5;
 }
 
-.cal-badge {
-  font-size: 0.7rem;
-  font-weight: 700;
+.btn-calibrar.cal-ok {
+  background: #E8F5E9;
+  color: #2E7D32;
+  border: 1px solid #A5D6A7;
 }
 
-.cal-ok { color: #2E7D32; }
-.cal-pending { color: #E65100; }
-
-.ol-direccion {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-
-.direccion-opciones {
+/* ── Dirección botones ── */
+.direccion-btns {
   display: flex;
   gap: 6px;
 }
 
-.dir-option {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  padding: 5px 10px;
-  border: 1px solid var(--md-outline);
-  border-radius: 8px;
+.btn-dir {
+  background: #F5F5F5;
+  color: #616161;
+  border: 1px solid #E0E0E0;
+  padding: 6px 10px;
   font-size: 0.75rem;
-  font-weight: 600;
-  cursor: pointer;
-  transition: all 0.15s ease;
-  user-select: none;
 }
 
-.dir-option input[type="radio"] {
-  display: none;
+.btn-dir:hover:not(:disabled) {
+  background: #EEEEEE;
 }
 
-.dir-option.active {
+.btn-dir.active {
   background: #E3F2FD;
   color: #1565C0;
   border-color: #1565C0;
@@ -386,6 +406,12 @@ const claseBadgeOL = computed(() => {
   display: flex;
   justify-content: space-between;
   align-items: center;
+}
+
+.param-label {
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: var(--md-on-surface-secondary, #757575);
 }
 
 .param-input {
@@ -417,13 +443,6 @@ const claseBadgeOL = computed(() => {
   justify-content: space-between;
   font-size: 0.65rem;
   color: var(--md-on-surface-secondary);
-}
-
-/* ── Acciones ───────────────────────────────── */
-.ol-acciones {
-  display: flex;
-  gap: 8px;
-  flex-wrap: wrap;
 }
 
 /* ── Botones ────────────────────────────────── */
@@ -481,24 +500,6 @@ const claseBadgeOL = computed(() => {
   background: #C62828;
 }
 
-/* ── Badges ─────────────────────────────────── */
-.badge {
-  display: inline-block;
-  padding: 3px 10px;
-  border-radius: 12px;
-  font-size: 0.75rem;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.03em;
-  width: fit-content;
-}
-
-.badge-idle { background: #E8E0EC; color: #6E5F72; }
-.badge-calibrando { background: #FDECDA; color: #C4501A; }
-.badge-listo { background: #E8F5E9; color: #2E7D32; }
-.badge-controlando { background: #F3E8F9; color: #8C2981; }
-.badge-posicion { background: #E3F2FD; color: #1565C0; }
-
 /* ── Control label ──────────────────────────── */
 .control-label {
   font-size: 0.72rem;
@@ -508,44 +509,53 @@ const claseBadgeOL = computed(() => {
   letter-spacing: 0.04em;
 }
 
-/* ── Fila central: animación + gráficos ────── */
+/* ── Fila central: gráficos 2x2 ────────────── */
 .ol-middle-row {
-  display: flex;
-  gap: 16px;
-  min-height: 340px;
-  flex-shrink: 0;
-}
-
-.animacion-wrapper {
-  flex: 1 1 50%;
-  min-width: 0;
-  min-height: 340px;
-}
-
-.graficos-wrapper {
-  flex: 1 1 50%;
-  min-width: 0;
-  min-height: 0;
-  overflow-y: auto;
+  flex: 0 0 auto;
+  min-height: 380px;
 }
 
 /* ── Fila inferior: resultados ──────────────── */
 .ol-results-row {
   flex-shrink: 0;
+  margin-top: auto;
 }
 
 /* ── Responsive ─────────────────────────────── */
-@media (max-width: 900px) {
+@media (max-width: 1100px) {
+  .ol-top-row {
+    flex-wrap: wrap;
+  }
+  .ol-card-controles {
+    flex: 1 1 100%;
+  }
+  .animacion-wrapper {
+    flex: 1 1 45%;
+  }
+  .ol-card-indicadores {
+    flex: 1 1 45%;
+  }
+  .ol-grid-superior {
+    flex-direction: row;
+  }
+  .impulso-sliders {
+    flex-direction: row;
+    gap: 16px;
+  }
+  .impulso-sliders .ol-param {
+    flex: 1;
+  }
+}
+
+@media (max-width: 700px) {
   .ol-top-row {
     flex-direction: column;
   }
-  .ol-middle-row {
-    flex-direction: column;
+  .animacion-wrapper,
+  .ol-card-indicadores {
+    flex: 1 1 100%;
   }
-  .controles-fila {
-    flex-direction: column;
-  }
-  .homing-botones {
+  .impulso-sliders {
     flex-direction: column;
   }
 }

@@ -145,7 +145,7 @@
         <AnimacionPendulo />
       </div>
       <div class="graficos-wrapper">
-        <GraficosTelemetria :graficos-default="['pwm', 'rpm', 'position']" />
+        <GraficosTelemetria :graficos-default="['angulo', 'rpm', 'posicion']" />
       </div>
     </div>
 
