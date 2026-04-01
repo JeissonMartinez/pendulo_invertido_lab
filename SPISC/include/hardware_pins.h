@@ -72,9 +72,10 @@
 #define PIN_LED          13
 
 // ══════════════════════════════════════════════════
-// Constantes de conversión
+// Constantes de conversión y geometría de la pista
 // ══════════════════════════════════════════════════
-#define CM_POR_GRADO     0.01103f  // Calibrado: 90cm / 8158° = 0.01103 cm/°
+#define TRACK_LENGTH_CM  90.0f    // Longitud total de la pista (cm)
+#define CM_POR_GRADO     0.01103f // Calibrado: 90cm / 8158° = 0.01103 cm/°
 
 // ══════════════════════════════════════════════════
 // Intervalos de publicación MQTT (ms)

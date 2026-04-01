@@ -2,6 +2,7 @@
 
 **Proyecto:** [SPISC — Sistema de Péndulo Invertido con Supervisión y Control](../README.md)  
 **Fecha:** 30/03/2026  
+**Última actualización:** 01/04/2026  
 **Autor:** Ing. Jeisson Martínez Flórez
 
 ---
@@ -64,6 +65,7 @@ Archivo: [`SPISC/include/hardware_pins.h`](../SPISC/include/hardware_pins.h)
 #define I2C_BUS1_SCL     19
 #define AS5600_ADDR      0x36
 #define CM_POR_GRADO     0.01103f  // Calibrado: 90cm / 8158° = 0.01103 cm/°
+#define TRACK_LENGTH_CM  90.0f    // Longitud total de la pista (cm)
 ```
 
 ### Variables de estado
@@ -73,10 +75,12 @@ Archivo: [`SPISC/src/sensors_i2c.cpp`](../SPISC/src/sensors_i2c.cpp)
 ```cpp
 static AS5600 _as5600_cart(&Wire1);     // Instancia del sensor
 static float  _posMagCm    = 0;         // Posición en centímetros
+static float  _velMagCmS   = 0;         // Velocidad instantánea cm/s (con signo)
 static float  _rpsMag      = 0;         // Revoluciones por segundo
 static float  _rpmMag      = 0;         // Revoluciones por minuto
 static int32_t _posOffset  = 265;       // Offset calibrado (cumPos cuando LS INICIO activo)
 static bool   _calibratedMagPos = false;
+static float  _prevPosMagCm = 0;        // Para cálculo de velocidad instantánea
 ```
 
 ### Fórmula de conversión
@@ -101,8 +105,51 @@ _posMagCm = ((cumPos - _posOffset) / 4096.0f) * 360.0f * CM_POR_GRADO;
 | `getPosMagCm()` | Retorna posición del carro en centímetros |
 | `getRpsMag()` | Retorna velocidad en revoluciones/segundo |
 | `getRpmMag()` | Retorna velocidad en revoluciones/minuto |
+| `getMagVelocityCmPerSec()` | **Nuevo:** Retorna velocidad instantánea en cm/s (con signo) |
 | `resetMagPosition()` | Resetea posición acumulada a 0 |
+| `setMagPositionCm(float cm)` | **Nuevo:** Calibra posición a un valor específico en cm |
 | `isMagPosCalibrated()` | Indica si la posición fue calibrada |
+
+### Velocidad instantánea para encoder IR
+
+Desde **01/04/2026**, se calcula la velocidad instantánea del carro cada 2ms (500 Hz), que es utilizada por el encoder IR para determinar la dirección del movimiento:
+
+```cpp
+// En update() - cada 2ms
+float dtSec = SENSOR_PERIOD_US / 1000000.0f;  // 0.002s
+_velMagCmS = (_posMagCm - _prevPosMagCm) / dtSec;
+_prevPosMagCm = _posMagCm;
+```
+
+Esto permite que el encoder IR detecte correctamente movimientos manuales del carro (sin motor activo).
+
+### Auto-calibración por limit switches
+
+Desde **01/04/2026**, la calibración de posición es **automática y centralizada** en `main.cpp`. Cuando el carro activa un limit switch, ambos sensores (IR y magnético) se calibran simultáneamente:
+
+| Evento | Acción automática |
+|--------|-------------------|
+| **LS_START activado** | `pos_ir_cm = 0 cm`, `pos_mag_cm = 0 cm` |
+| **LS_END activado** | `pos_ir_cm = 90 cm`, `pos_mag_cm = 90 cm` |
+
+Esta lógica aplica **siempre**, sin importar:
+- El modo de control activo (OPEN_LOOP, SWEEP_PWM, futuros modos)
+- Si el carro llega al límite por comando o movimiento manual
+
+**Implementación:**
+```cpp
+// Flanco de activación LS_START → Calibrar a 0 cm
+if (lsStartNow && !_prevLsStart) {
+    EncoderIR::setPositionCm(0.0f);
+    SensorsI2C::setMagPositionCm(0.0f);
+}
+
+// Flanco de activación LS_END → Calibrar a TRACK_LENGTH_CM (90 cm)
+if (lsEndNow && !_prevLsEnd) {
+    EncoderIR::setPositionCm(TRACK_LENGTH_CM);
+    SensorsI2C::setMagPositionCm(TRACK_LENGTH_CM);
+}
+```
 
 ### Ejemplo de uso
 

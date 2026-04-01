@@ -25,6 +25,9 @@ int32_t getGlobalPosition();
 /** Resetea la posición global a cero. */
 void resetGlobalPosition();
 
+/** Setea la posición global a un valor específico en cm. */
+void setPositionCm(float cm);
+
 /**
  * Calcula RPM/RPS instantáneos basado en pulsos acumulados.
  * Llamar periódicamente (~5-10 Hz) para obtener valores precisos.

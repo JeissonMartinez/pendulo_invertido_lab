@@ -55,10 +55,12 @@ static bool  _calibratedAngle = false;
 
 // ── Variables AS5600 carro (magnético) ───────
 static float  _posMagCm    = 0;
+static float  _velMagCmS   = 0;  // Velocidad instantánea cm/s (con signo)
 static float  _rpsMag      = 0;
 static float  _rpmMag      = 0;
 static int32_t _posOffset  = 265;  // Offset calibrado: cumPos cuando LS INICIO activo
 static bool   _calibratedMagPos = false;
+static float  _prevPosMagCm = 0;  // Para cálculo de velocidad instantánea
 
 // ── Variables MPU6050 ────────────────────────
 static float _ax = 0, _ay = 0, _az = 0;
@@ -242,6 +244,11 @@ void update() {
             _recoveryAttempts1 = 0;  // Reset contador en lectura exitosa
             // Aplicar offset calibrado para que posMagCm=0 cuando LS INICIO activo
             _posMagCm = ((cumPos - _posOffset) / 4096.0f) * 360.0f * CM_POR_GRADO;
+            
+            // Calcular velocidad instantánea (cm/s) para encoder IR
+            float dtSec = SENSOR_PERIOD_US / 1000000.0f;  // 2ms = 0.002s
+            _velMagCmS = (_posMagCm - _prevPosMagCm) / dtSec;
+            _prevPosMagCm = _posMagCm;
         }
     }
     // Si no se obtuvo mutex, simplemente omitir esta lectura (no bloquear)
@@ -287,12 +294,30 @@ bool isAngleCalibrated()  { return _calibratedAngle; }
 float getPosMagCm() { return _posMagCm; }
 float getRpsMag()   { return _rpsMag; }
 float getRpmMag()   { return _rpmMag; }
+float getMagVelocityCmPerSec() { return _velMagCmS; }
 
 void resetMagPosition() {
     _as5600_cart.resetCumulativePosition(0);
     _posMagCm     = 0;
     _calibratedMagPos = true;
     Serial.println("[sensors] Posición magnética calibrada a 0.0 cm");
+}
+
+void setMagPositionCm(float cm) {
+    // Calcular el offset necesario para que la posición actual sea 'cm'
+    // cumPos_actual = (posMagCm / CM_POR_GRADO / 360.0) * 4096 + _posOffset
+    // Nuevo offset para que posMagCm = cm: _posOffset = cumPos_actual - (cm / CM_POR_GRADO / 360.0) * 4096
+    bool gotMutex = lockI2CBus1(20);
+    if (gotMutex) {
+        int32_t cumPos = _as5600_cart.getCumulativePosition();
+        unlockI2CBus1();
+        _posOffset = cumPos - (int32_t)((cm / CM_POR_GRADO / 360.0f) * 4096.0f);
+        _posMagCm = cm;
+        _calibratedMagPos = true;
+        Serial.printf("[sensors] Posición magnética calibrada a %.1f cm (offset=%ld)\n", cm, _posOffset);
+    } else {
+        Serial.println("[sensors] ERROR: No se pudo adquirir mutex para calibrar posición mag");
+    }
 }
 
 bool isMagPosCalibrated() { return _calibratedMagPos; }

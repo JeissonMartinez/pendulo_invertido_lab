@@ -40,9 +40,14 @@ bool isAngleCalibrated();
 float getPosMagCm();          // posición en cm
 float getRpsMag();            // rev/s del AS5600 motor
 float getRpmMag();            // rev/min del AS5600 motor
+float getMagVelocityCmPerSec(); // velocidad instantánea en cm/s (con signo)
 
 /** Resetear posición magnética a cero. */
 void resetMagPosition();
+
+/** Setear posición magnética a un valor específico en cm. */
+void setMagPositionCm(float cm);
+
 bool isMagPosCalibrated();
 
 // ── MPU6050: IMU ─────────────────────────────

@@ -7,6 +7,7 @@
 #include "encoder_ir.h"
 #include "hardware_pins.h"
 #include "motor_control.h"
+#include "sensors_i2c.h"
 #include <driver/pcnt.h>
 
 namespace EncoderIR {
@@ -64,8 +65,10 @@ static uint32_t _getRawPulseCount() {
 }
 
 /**
- * Actualiza la posición global aplicando dirección del motor.
+ * Actualiza la posición global aplicando dirección del sensor magnético.
  * Debe llamarse periódicamente (en updateRPM o desde el loop).
+ * Usa la velocidad del AS5600 para detectar dirección, permitiendo
+ * detectar movimientos manuales del carro (no solo por motor).
  */
 static void _updateGlobalPosition() {
     int16_t currentPcnt = 0;
@@ -81,19 +84,26 @@ static void _updateGlobalPosition() {
         delta += PCNT_H_LIM;  // Overflow ocurrió
     }
     
-    // Aplicar dirección del motor si hay movimiento
+    // Aplicar dirección basada en sensor magnético (detecta mov. manuales)
     if (delta != 0) {
-        // En modo debug, acumular siempre (no depende de dirección motor)
+        int absDelta = (delta > 0) ? delta : -delta;
+        
         if (_debugMode) {
-            _globalPosition += (delta > 0) ? delta : -delta;
+            // En modo debug, acumular siempre positivo
+            _globalPosition += absDelta;
         } else {
-            MotorDir dir = Motor::getDirection();
-            if (dir == DIR_ADELANTE) {
-                _globalPosition += (delta > 0) ? delta : -delta;
-            } else if (dir == DIR_ATRAS) {
-                _globalPosition -= (delta > 0) ? delta : -delta;
+            // Usar velocidad del sensor magnético para determinar dirección
+            float velMag = SensorsI2C::getMagVelocityCmPerSec();
+            const float VEL_THRESHOLD = 0.5f;  // cm/s umbral para considerar movimiento
+            
+            if (velMag > VEL_THRESHOLD) {
+                // Movimiento hacia adelante (posición aumenta)
+                _globalPosition += absDelta;
+            } else if (velMag < -VEL_THRESHOLD) {
+                // Movimiento hacia atrás (posición disminuye)
+                _globalPosition -= absDelta;
             }
-            // Si DIR_QUIETO, no acumular posición
+            // Si |velMag| < umbral, ignorar pulsos (ruido o carro quieto)
         }
     }
     
@@ -166,6 +176,12 @@ int32_t getGlobalPosition() {
 
 void resetGlobalPosition() {
     _globalPosition = 0;
+}
+
+void setPositionCm(float cm) {
+    // Convertir cm a pulsos y setear posición global
+    _globalPosition = (int32_t)(cm / CM_POR_PULSO);
+    Serial.printf("[EncoderIR] Posición calibrada a %.1f cm (%ld pulsos)\n", cm, _globalPosition);
 }
 
 void updateRPM() {

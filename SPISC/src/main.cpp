@@ -73,6 +73,12 @@ SemaphoreHandle_t telemetryMutex = NULL;  // Definición del extern de telemetry
 static TelemetryPacket sharedTelemetry = {};
 static FirmwareMode activeMode = MODE_IDLE;
 
+// ══════════════════════════════════════════════════
+// Auto-calibración de posición por limit switches
+// ══════════════════════════════════════════════════
+static bool _prevLsStart = false;
+static bool _prevLsEnd   = false;
+
 // Forward declarations
 static const char* getActiveModeStateStr();
 static void buildTelemetry(TelemetryPacket& pkt);
@@ -250,6 +256,30 @@ void taskSensorsAndControl(void* pvParameters) {
 
         // 2. Verificar limit switches
         LimitSwitches::checkAndPublishChanges();
+
+        // 2.5 Auto-calibración de posición por limit switches
+        //     Esta lógica es independiente del modo y corrige deriva de sensores.
+        {
+            bool lsStartNow = LimitSwitches::isStartActive();
+            bool lsEndNow   = LimitSwitches::isEndActive();
+
+            // Flanco de activación LS_START → Calibrar a 0 cm
+            if (lsStartNow && !_prevLsStart) {
+                EncoderIR::setPositionCm(0.0f);
+                SensorsI2C::setMagPositionCm(0.0f);
+                Serial.println("[main] Auto-calibración: LS_START → posición = 0 cm");
+            }
+
+            // Flanco de activación LS_END → Calibrar a TRACK_LENGTH_CM
+            if (lsEndNow && !_prevLsEnd) {
+                EncoderIR::setPositionCm(TRACK_LENGTH_CM);
+                SensorsI2C::setMagPositionCm(TRACK_LENGTH_CM);
+                Serial.println("[main] Auto-calibración: LS_END → posición = 90 cm");
+            }
+
+            _prevLsStart = lsStartNow;
+            _prevLsEnd   = lsEndNow;
+        }
 
         // 3. Safety check
         Safety::check();

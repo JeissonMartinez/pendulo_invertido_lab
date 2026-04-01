@@ -252,8 +252,7 @@ void loop() {
             Motor::freno();
             _atStart = true;
             _atEnd = false;
-            EncoderIR::resetGlobalPosition();
-            EncoderIR::resetPulseCount();
+            // Auto-calibración de posición se hace en main.cpp (centralizada)
             Serial.println("[openloop] Home (inicio) alcanzado.");
             _changeState(OL_READY);
             break;  // Salir inmediatamente para evitar underflow de timeout
@@ -271,8 +270,7 @@ void loop() {
             Motor::freno();
             _atEnd = true;
             _atStart = false;
-            EncoderIR::resetGlobalPosition();
-            EncoderIR::resetPulseCount();
+            // Auto-calibración de posición se hace en main.cpp (centralizada)
             Serial.println("[openloop] Home (fin) alcanzado.");
             _changeState(OL_READY);
             break;  // Salir inmediatamente para evitar underflow de timeout

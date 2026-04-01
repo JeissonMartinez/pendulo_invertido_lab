@@ -2,6 +2,7 @@
 
 **Proyecto:** [SPISC — Sistema de Péndulo Invertido con Supervisión y Control](../README.md)  
 **Fecha:** 31/03/2026  
+**Última actualización:** 01/04/2026  
 **Autor:** Ing. Jeisson Martínez Flórez
 
 ---
@@ -90,36 +91,79 @@ CM_POR_PULSO = 90 / 1786 ≈ 0.0504 cm/pulso
 Archivo: [`SPISC/include/hardware_pins.h`](../SPISC/include/hardware_pins.h)
 
 ```cpp
-// Encoder Infrarrojo HC-020K
-#define PIN_ENCODER_IR   16
-#define PULSES_PER_REV   40
-#define CM_POR_PULSO     0.0504f
+// Encoder Infrarrojo HC-020K (con PCNT)
+#define PIN_ENCODER_IR     16
+#define PULSES_PER_REV     40
+#define CM_POR_PULSO       0.0992f  // Calibrado: 90cm / 907 pulsos (PCNT)
+
+// PCNT (Pulse Counter) Hardware
+#define PCNT_UNIT_ENCODER  PCNT_UNIT_0
+#define PCNT_CHANNEL_ENC   PCNT_CHANNEL_0
+#define PCNT_FILTER_VAL    100      // Filtro anti-glitch (~1.25µs @ 80MHz)
+#define PCNT_H_LIM         10000    // Límite superior antes de overflow
+#define PCNT_L_LIM         -10000   // Límite inferior antes de underflow
+
+// Geometría de la pista
+#define TRACK_LENGTH_CM    90.0f    // Longitud total de la pista (cm)
 ```
 
-### Implementación del driver
+### Implementación del driver (PCNT)
 
 Archivo: [`SPISC/src/encoder_ir.cpp`](../SPISC/src/encoder_ir.cpp)
 
+El driver utiliza el periférico **PCNT (Pulse Counter)** del ESP32 para conteo por hardware, eliminando pérdida de pulsos por latencia de ISR.
+
 ```cpp
-// Variables ISR (volatile)
-static volatile uint32_t _isrPulseCount = 0;
-static volatile int32_t  _globalPosition = 0;
+#include "encoder_ir.h"
+#include "hardware_pins.h"
+#include "sensors_i2c.h"  // Para detección de dirección
+#include <driver/pcnt.h>
 
-// ISR del encoder (método actual)
-static void IRAM_ATTR _encoderISR() {
-    _isrPulseCount++;
-    MotorDir dir = Motor::getDirection();
-    if (dir == DIR_ADELANTE)
-        _globalPosition++;
-    else if (dir == DIR_ATRAS)
-        _globalPosition--;
+namespace EncoderIR {
+
+static volatile int32_t _overflowCount = 0;
+static int32_t _globalPosition = 0;
+static int16_t _lastPcntValue = 0;
+
+// ISR para overflow/underflow del contador PCNT
+static void IRAM_ATTR _pcntOverflowISR(void* arg) {
+    uint32_t status = 0;
+    pcnt_get_event_status(PCNT_UNIT_ENCODER, &status);
+    if (status & PCNT_EVT_H_LIM) _overflowCount++;
+    if (status & PCNT_EVT_L_LIM) _overflowCount--;
 }
 
-void begin() {
-    pinMode(PIN_ENCODER_IR, INPUT);
-    attachInterrupt(digitalPinToInterrupt(PIN_ENCODER_IR), _encoderISR, RISING);
-    _prevTime = millis();
+/**
+ * Actualiza la posición global usando la velocidad del sensor magnético
+ * para determinar la dirección (detecta movimientos manuales del carro).
+ */
+static void _updateGlobalPosition() {
+    int16_t currentPcnt = 0;
+    pcnt_get_counter_value(PCNT_UNIT_ENCODER, &currentPcnt);
+    int16_t delta = currentPcnt - _lastPcntValue;
+    
+    // Manejar wraparound del contador PCNT
+    if (delta > PCNT_H_LIM / 2) delta -= PCNT_H_LIM;
+    else if (delta < -PCNT_H_LIM / 2) delta += PCNT_H_LIM;
+    
+    if (delta != 0) {
+        int absDelta = (delta > 0) ? delta : -delta;
+        
+        // Usar velocidad del sensor magnético para determinar dirección
+        float velMag = SensorsI2C::getMagVelocityCmPerSec();
+        const float VEL_THRESHOLD = 0.5f;  // cm/s
+        
+        if (velMag > VEL_THRESHOLD) {
+            _globalPosition += absDelta;  // Adelante
+        } else if (velMag < -VEL_THRESHOLD) {
+            _globalPosition -= absDelta;  // Atrás
+        }
+        // Si |velMag| < umbral, ignorar pulsos (ruido)
+    }
+    _lastPcntValue = currentPcnt;
 }
+
+}  // namespace EncoderIR
 ```
 
 ### Fórmula de conversión
@@ -144,9 +188,53 @@ Archivo: [`SPISC/include/encoder_ir.h`](../SPISC/include/encoder_ir.h)
 | `resetPulseCount()` | Resetea contador de pulsos a cero |
 | `getGlobalPosition()` | Retorna posición con signo (considera dirección) |
 | `resetGlobalPosition()` | Resetea posición global a cero |
+| `setPositionCm(float cm)` | **Nuevo:** Calibra posición a un valor específico en cm |
 | `updateRPM()` | Calcula RPM/RPS basado en delta de pulsos |
 | `getRPS()` / `getRPM()` | Retorna velocidad angular calculada |
 | `getPositionCm()` | Retorna posición lineal en centímetros |
+
+### Detección de dirección por sensor magnético
+
+Desde **01/04/2026**, la dirección del movimiento se determina usando la velocidad instantánea del sensor magnético AS5600 (`getMagVelocityCmPerSec()`), en lugar de depender de los comandos del motor.
+
+**Ventajas:**
+- Detecta movimientos manuales del carro (sin motor activo)
+- Ambos sensores (IR y magnético) miden correctamente en cualquier situación
+- Elimina dependencia del estado del controlador del motor
+
+| Velocidad magnética | Acción encoder IR |
+|---------------------|-------------------|
+| `> +0.5 cm/s` | Suma pulsos (adelante) |
+| `< -0.5 cm/s` | Resta pulsos (atrás) |
+| Entre ±0.5 cm/s | Ignora pulsos (evita drift por ruido) |
+
+### Auto-calibración por limit switches
+
+Desde **01/04/2026**, la calibración de posición es **automática y centralizada** en `main.cpp`. Cuando el carro activa un limit switch, ambos sensores (IR y magnético) se calibran simultáneamente:
+
+| Evento | Acción automática |
+|--------|-------------------|
+| **LS_START activado** | `pos_ir_cm = 0 cm`, `pos_mag_cm = 0 cm` |
+| **LS_END activado** | `pos_ir_cm = 90 cm`, `pos_mag_cm = 90 cm` |
+
+Esta lógica aplica **siempre**, sin importar:
+- El modo de control activo (OPEN_LOOP, SWEEP_PWM, futuros modos)
+- Si el carro llega al límite por comando o movimiento manual
+
+**Implementación en `main.cpp`:**
+```cpp
+// Flanco de activación LS_START → Calibrar a 0 cm
+if (lsStartNow && !_prevLsStart) {
+    EncoderIR::setPositionCm(0.0f);
+    SensorsI2C::setMagPositionCm(0.0f);
+}
+
+// Flanco de activación LS_END → Calibrar a TRACK_LENGTH_CM (90 cm)
+if (lsEndNow && !_prevLsEnd) {
+    EncoderIR::setPositionCm(TRACK_LENGTH_CM);
+    SensorsI2C::setMagPositionCm(TRACK_LENGTH_CM);
+}
+```
 
 ### Datos publicados en telemetría
 
@@ -459,5 +547,5 @@ Ejecutar desde el HMI:
 
 - [ESP-IDF PCNT Documentation](https://docs.espressif.com/projects/esp-idf/en/latest/esp32/api-reference/peripherals/pcnt.html)
 - [Datasheet LM393 Comparator](https://www.ti.com/lit/ds/symlink/lm393.pdf)
-- [Calibración AS5600](./calibracion_posicion.md) — Sensor magnético complementario
+- [Calibración AS5600](./calibracion_posicion_mag.md) — Sensor magnético complementario
 - [Configuración Dual-Core](./config_dual_core.md) — Arquitectura de tareas FreeRTOS
