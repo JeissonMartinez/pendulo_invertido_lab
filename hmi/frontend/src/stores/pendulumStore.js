@@ -288,8 +288,9 @@ export const usePendulumStore = defineStore('pendulum', () => {
     // Si está en modo OPEN_LOOP, agregar a resultados
     if (datos.modo === 'OPEN_LOOP' || experimentoActivo.value === 'lazo_abierto') {
       openLoopResults.value.push({
-        ts: ahora,
         ...datos,
+        ts: ahora,  // Sobrescribir el ts del ESP32 con timestamp real
+        state: estado.value.state,
       })
       // Limitar a últimos 10000 registros
       if (openLoopResults.value.length > 10000) {
