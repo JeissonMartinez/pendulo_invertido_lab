@@ -140,6 +140,10 @@ static void buildTelemetry(TelemetryPacket& pkt) {
     pkt.pid_kd         = PidPosicionMode::getKd();
     pkt.pid_zona_seg   = PidPosicionMode::getZonaSeguridad();
     pkt.pid_tolerancia = PidPosicionMode::getTolerancia();
+    pkt.pid_output_sat = PidPosicionMode::getOutputSaturated();
+    pkt.pid_sensor_type = PidPosicionMode::getSensorType();
+    pkt.pid_pwm_min    = PidPosicionMode::getPwmMin();
+    pkt.pid_pwm_max    = PidPosicionMode::getPwmMax();
 }
 
 // ══════════════════════════════════════════════════

@@ -70,9 +70,11 @@ void publishTelemetry(const TelemetryPacket& p) {
         "\"ls_start\":%s,\"ls_end\":%s,"
         "\"ts\":%lu,\"modo\":\"%s\",\"ol_state\":\"%s\","
         // Control PID Posición
-        "\"pid_error\":%.3f,\"pid_integral\":%.3f,\"pid_derivada\":%.3f,\"pid_output\":%.1f,"
+        "\"pid_error\":%.3f,\"pid_integral\":%.3f,\"pid_derivada\":%.3f,"
+        "\"pid_output\":%.1f,\"pid_output_sat\":%.1f,"
         "\"pid_setpoint\":%.2f,\"pid_kp\":%.2f,\"pid_ki\":%.3f,\"pid_kd\":%.3f,"
         "\"pid_zona_seg\":%.1f,\"pid_tolerancia\":%.2f,"
+        "\"pid_sensor_type\":%d,\"pid_pwm_min\":%d,\"pid_pwm_max\":%d,"
         // Mantener campos de compatibilidad con frontend actual
         "\"angle\":%.2f,\"position\":%.2f,\"cart_accel\":%.3f,\"rpm\":%.1f,"
         "\"posicion\":%.2f,\"direccion\":%d"
@@ -87,9 +89,11 @@ void publishTelemetry(const TelemetryPacket& p) {
         p.ls_start ? "true" : "false", p.ls_end ? "true" : "false",
         p.ts, firmwareModeToStr(p.modo), p.ol_state ? p.ol_state : "",
         // PID
-        p.pid_error, p.pid_integral, p.pid_derivada, p.pid_output,
+        p.pid_error, p.pid_integral, p.pid_derivada,
+        p.pid_output, p.pid_output_sat,
         p.pid_setpoint, p.pid_kp, p.pid_ki, p.pid_kd,
         p.pid_zona_seg, p.pid_tolerancia,
+        p.pid_sensor_type, p.pid_pwm_min, p.pid_pwm_max,
         // Compatibilidad: angle=angle_pend, position=pos_mag_cm, cart_accel=mpu_ax, rpm=rpm_ir
         p.angle_pend, p.pos_mag_cm, p.mpu_ax, p.rpm_ir,
         p.pos_mag_cm, (int)p.direction

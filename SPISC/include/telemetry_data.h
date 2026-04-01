@@ -87,13 +87,17 @@ struct TelemetryPacket {
     float pid_error;         // Error actual: setpoint - pos_actual (cm)
     float pid_integral;      // Término integral acumulado
     float pid_derivada;      // Término derivativo (filtrado)
-    float pid_output;        // Salida del controlador (PWM)
+    float pid_output;        // Salida del controlador (cruda, antes de saturación)
+    float pid_output_sat;    // Salida del controlador (saturada, PWM real aplicado)
     float pid_setpoint;      // Setpoint configurado (cm)
     float pid_kp;            // Constante proporcional
     float pid_ki;            // Constante integral
     float pid_kd;            // Constante derivativa
     float pid_zona_seg;      // Zona de seguridad (cm)
     float pid_tolerancia;    // Tolerancia de llegada (cm)
+    int   pid_sensor_type;   // 0=magnético (AS5600), 1=infrarrojo (HC-020K)
+    int   pid_pwm_min;       // PWM mínimo configurado
+    int   pid_pwm_max;       // PWM máximo configurado
 };
 
 // Helpers para convertir enums a string

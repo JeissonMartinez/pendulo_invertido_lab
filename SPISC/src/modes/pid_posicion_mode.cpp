@@ -54,8 +54,12 @@ static const float MIN_ZONA_SEG = 2.0f,  MAX_ZONA_SEG = 20.0f;
 static const float MIN_TOLERANCIA = 0.5f, MAX_TOLERANCIA = 5.0f;
 
 static const float INTEGRAL_MAX = 500.0f;   // Anti-windup: límite de integral
-static const int   MIN_PWM_CONTROL = 200;   // PWM mínimo para vencer inercia
-static const int   MAX_PWM_CONTROL = 1023;  // PWM máximo
+
+// Rangos para PWM configurable
+static const int   DEFAULT_PWM_MIN = 200;   // PWM mínimo por defecto
+static const int   DEFAULT_PWM_MAX = 700;   // PWM máximo por defecto
+static const int   ABS_MIN_PWM = 100;       // Límite absoluto mínimo
+static const int   ABS_MAX_PWM = 1023;      // Límite absoluto máximo
 
 static const float DERIV_FILTER_ALPHA = 0.2f;  // Filtro pasa-bajos derivativo (0-1)
 
@@ -82,6 +86,13 @@ static float _setpoint = DEFAULT_SETPOINT;
 static float _zonaSeguridad = DEFAULT_ZONA_SEG;
 static float _tolerancia = DEFAULT_TOLERANCIA;
 
+// Selección de sensor: true = AS5600 magnético, false = Encoder IR
+static bool _useMagSensor = true;
+
+// PWM configurable
+static int _pwmMin = DEFAULT_PWM_MIN;
+static int _pwmMax = DEFAULT_PWM_MAX;
+
 // ══════════════════════════════════════════════════
 // Variables del controlador PID
 // ══════════════════════════════════════════════════
@@ -90,7 +101,8 @@ static float _errorPrev = 0.0f;
 static float _integral = 0.0f;
 static float _derivada = 0.0f;
 static float _derivadaFiltrada = 0.0f;
-static float _output = 0.0f;
+static float _output = 0.0f;        // Salida PID cruda (antes de saturación)
+static float _outputSaturated = 0.0f;  // Salida PID saturada (PWM aplicado)
 
 // Tiempo para control discreto
 static unsigned long _lastControlTime = 0;
@@ -116,6 +128,9 @@ static float _pendingKd = DEFAULT_KD;
 static float _pendingSetpoint = DEFAULT_SETPOINT;
 static float _pendingZonaSeg = DEFAULT_ZONA_SEG;
 static float _pendingTolerancia = DEFAULT_TOLERANCIA;
+static bool  _pendingUseMagSensor = true;
+static int   _pendingPwmMin = DEFAULT_PWM_MIN;
+static int   _pendingPwmMax = DEFAULT_PWM_MAX;
 
 // ══════════════════════════════════════════════════
 // Helpers internos
@@ -133,6 +148,7 @@ static void _resetPidVariables() {
     _derivada = 0.0f;
     _derivadaFiltrada = 0.0f;
     _output = 0.0f;
+    _outputSaturated = 0.0f;
     _lastControlTime = millis();
     _inToleranceTime = 0;
     _wasInTolerance = false;
@@ -198,23 +214,27 @@ static bool _executePidControl(float posActual) {
     _derivadaFiltrada = DERIV_FILTER_ALPHA * _derivada + (1.0f - DERIV_FILTER_ALPHA) * _derivadaFiltrada;
     _errorPrev = _error;
 
-    // 4. Calcular salida PID
+    // 4. Calcular salida PID (cruda, antes de saturación)
     _output = _kp * _error + _ki * _integral + _kd * _derivadaFiltrada;
 
     // 5. Verificar si está en tolerancia
     bool inTolerance = (fabsf(_error) <= _tolerancia);
 
-    // 6. Aplicar control al motor
+    // 6. Aplicar control al motor con saturación configurable
     if (inTolerance) {
         // Dentro de tolerancia: frenar
         Motor::freno();
+        _outputSaturated = 0.0f;
     } else {
         // Fuera de tolerancia: aplicar PWM
         int pwm = (int)fabsf(_output);
         
-        // Saturar PWM
-        if (pwm < MIN_PWM_CONTROL) pwm = MIN_PWM_CONTROL;
-        if (pwm > MAX_PWM_CONTROL) pwm = MAX_PWM_CONTROL;
+        // Saturar PWM con límites configurables
+        if (pwm < _pwmMin) pwm = _pwmMin;
+        if (pwm > _pwmMax) pwm = _pwmMax;
+        
+        // Guardar salida saturada (con signo para indicar dirección)
+        _outputSaturated = (_output > 0) ? (float)pwm : -(float)pwm;
 
         if (_output > 0) {
             Motor::adelante(pwm);
@@ -306,6 +326,22 @@ void onCommand(const char* topic, const char* payload) {
         _pendingZonaSeg = _parseFloat(payload, "zona_seguridad", _zonaSeguridad);
         _pendingTolerancia = _parseFloat(payload, "tolerancia", _tolerancia);
         
+        // Parsear selección de sensor
+        const char* sensorVal = _findValue(payload, "sensor");
+        if (sensorVal) {
+            if (strstr(sensorVal, "\"ir\"")) {
+                _pendingUseMagSensor = false;
+            } else if (strstr(sensorVal, "\"mag\"")) {
+                _pendingUseMagSensor = true;
+            }
+        } else {
+            _pendingUseMagSensor = _useMagSensor;  // Mantener actual
+        }
+        
+        // Parsear límites PWM
+        _pendingPwmMin = (int)_parseFloat(payload, "pwm_min", (float)_pwmMin);
+        _pendingPwmMax = (int)_parseFloat(payload, "pwm_max", (float)_pwmMax);
+        
         // Validar y clampar valores
         if (_pendingKp < MIN_KP) _pendingKp = MIN_KP;
         if (_pendingKp > MAX_KP) _pendingKp = MAX_KP;
@@ -318,6 +354,17 @@ void onCommand(const char* topic, const char* payload) {
         if (_pendingTolerancia < MIN_TOLERANCIA) _pendingTolerancia = MIN_TOLERANCIA;
         if (_pendingTolerancia > MAX_TOLERANCIA) _pendingTolerancia = MAX_TOLERANCIA;
         
+        // Clampar PWM
+        if (_pendingPwmMin < ABS_MIN_PWM) _pendingPwmMin = ABS_MIN_PWM;
+        if (_pendingPwmMin > 500) _pendingPwmMin = 500;
+        if (_pendingPwmMax < 300) _pendingPwmMax = 300;
+        if (_pendingPwmMax > ABS_MAX_PWM) _pendingPwmMax = ABS_MAX_PWM;
+        // Asegurar que min < max
+        if (_pendingPwmMin >= _pendingPwmMax) {
+            _pendingPwmMin = DEFAULT_PWM_MIN;
+            _pendingPwmMax = DEFAULT_PWM_MAX;
+        }
+        
         _cmdConfig = true;
     }
 }
@@ -326,7 +373,9 @@ void loop() {
     unsigned long now = millis();
     bool startActive = LimitSwitches::isStartActive();
     bool endActive   = LimitSwitches::isEndActive();
-    float posActual  = SensorsI2C::getPosMagCm();  // Usar sensor magnético
+    
+    // Leer posición según sensor seleccionado
+    float posActual = _useMagSensor ? SensorsI2C::getPosMagCm() : EncoderIR::getPositionCm();
 
     // ══════════════════════════════════════════════════
     // Parada de emergencia (máxima prioridad)
@@ -384,9 +433,14 @@ void loop() {
                 _setpoint = _pendingSetpoint;
                 _zonaSeguridad = _pendingZonaSeg;
                 _tolerancia = _pendingTolerancia;
+                _useMagSensor = _pendingUseMagSensor;
+                _pwmMin = _pendingPwmMin;
+                _pwmMax = _pendingPwmMax;
                 
                 Serial.printf("[pidpos] Config: Kp=%.2f Ki=%.3f Kd=%.3f SP=%.1f ZS=%.1f TOL=%.1f\n",
                     _kp, _ki, _kd, _setpoint, _zonaSeguridad, _tolerancia);
+                Serial.printf("[pidpos] Config: Sensor=%s PWM=[%d,%d]\n",
+                    _useMagSensor ? "MAG" : "IR", _pwmMin, _pwmMax);
             }
         }
 
@@ -522,12 +576,17 @@ void loop() {
 float getError()          { return _error; }
 float getIntegral()       { return _integral; }
 float getDerivada()       { return _derivadaFiltrada; }
-float getOutput()         { return _output; }
+float getOutput()         { return _output; }           // Salida cruda (alias)
+float getOutputRaw()      { return _output; }           // Salida antes de saturación
+float getOutputSaturated(){ return _outputSaturated; }  // Salida después de saturación
 float getSetpoint()       { return _setpoint; }
 float getKp()             { return _kp; }
 float getKi()             { return _ki; }
 float getKd()             { return _kd; }
 float getZonaSeguridad()  { return _zonaSeguridad; }
 float getTolerancia()     { return _tolerancia; }
+int   getSensorType()     { return _useMagSensor ? 0 : 1; }  // 0=mag, 1=ir
+int   getPwmMin()         { return _pwmMin; }
+int   getPwmMax()         { return _pwmMax; }
 
 }  // namespace PidPosicionMode

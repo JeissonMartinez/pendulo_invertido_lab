@@ -56,8 +56,14 @@ float getIntegral();
 /** Término derivativo (derivada del error) */
 float getDerivada();
 
-/** Salida del controlador PID (PWM antes de saturación) */
+/** Salida del controlador PID (cruda, antes de saturación) */
 float getOutput();
+
+/** Salida PID cruda (alias de getOutput) */
+float getOutputRaw();
+
+/** Salida PID saturada (PWM real aplicado con signo) */
+float getOutputSaturated();
 
 /** Setpoint configurado (cm) */
 float getSetpoint();
@@ -72,6 +78,15 @@ float getZonaSeguridad();
 
 /** Tolerancia para considerar "llegada" al setpoint (cm) */
 float getTolerancia();
+
+/** Tipo de sensor: 0=magnético (AS5600), 1=infrarrojo (HC-020K) */
+int getSensorType();
+
+/** PWM mínimo configurado */
+int getPwmMin();
+
+/** PWM máximo configurado */
+int getPwmMax();
 
 }  // namespace PidPosicionMode
 

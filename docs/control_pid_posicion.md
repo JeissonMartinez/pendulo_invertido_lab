@@ -2,7 +2,7 @@
 
 **Proyecto:** [SPISC — Sistema de Péndulo Invertido con Supervisión y Control](../README.md)  
 **Fecha:** 01/04/2026  
-**Última actualización:** 01/04/2026  
+**Última actualización:** 01/04/2026 (v2.0)  
 **Autor:** Ing. Jeisson Martínez Flórez
 
 ---
@@ -52,15 +52,17 @@ El modo **Control PID de Posición** (`MODE_PID_POS`) implementa un controlador 
 
 ### Características principales
 
-| Característica | Valor |
-|---------------|-------|
-| **Frecuencia de control** | 500-1000 Hz (Core 0) |
-| **Sensor de posición** | AS5600 magnético |
-| **Rango de posición** | 0 - 90 cm |
-| **PWM mínimo** | 200 (vencer inercia estática) |
-| **PWM máximo** | 1023 |
-| **Anti-windup** | Saturación de integral ±500 |
-| **Filtro derivativo** | Pasa-bajos α = 0.2 |
+| Característica | Valor por defecto | Rango configurable |
+|---------------|-------------------|---------------------|
+| **Frecuencia de control** | 1000 Hz (Core 0) | Fijo |
+| **Sensor de posición** | AS5600 magnético | `mag` / `ir` |
+| **Rango de posición** | 0 - 90 cm | Fijo |
+| **PWM mínimo** | 200 | [100, 500] |
+| **PWM máximo** | 700 | [300, 1023] |
+| **Anti-windup** | Saturación de integral ±500 | Fijo |
+| **Filtro derivativo** | Pasa-bajos α = 0.2 | Fijo |
+
+> **Nota v2**: El sensor y límites PWM son configurables vía MQTT.
 
 ---
 
@@ -181,11 +183,27 @@ namespace PidPosicionMode {
   "kd": 0.5,
   "setpoint": 45.0,
   "zona_seguridad": 5.0,
-  "tolerancia": 1.0
+  "tolerancia": 1.0,
+  "sensor": "mag",
+  "pwm_min": 200,
+  "pwm_max": 700
 }
 ```
 
 > **Nota:** Todos los parámetros son opcionales. Solo se actualizan los incluidos.
+
+#### Selección de sensor
+
+| Valor | Sensor | Descripción |
+|-------|--------|-------------|
+| `"mag"` | AS5600 magnético | Mayor precisión, requiere calibración |
+| `"ir"` | HC-020K infrarrojo | Más robusto, menor resolución |
+
+#### Límites de PWM
+
+Permite ajustar el rango del actuador:
+- `pwm_min`: PWM mínimo para vencer inercia (default: 200, rango: [100, 500])
+- `pwm_max`: PWM máximo (default: 700, rango: [300, 1023])
 
 ---
 
@@ -199,6 +217,9 @@ namespace PidPosicionMode {
 | `setpoint` | 45.0 | [zona_seg, 90-zona_seg] | cm | Posición objetivo |
 | `zona_seguridad` | 5.0 | [2.0, 20.0] | cm | Distancia segura desde límites |
 | `tolerancia` | 1.0 | [0.5, 5.0] | cm | Error aceptable para "llegada" |
+| `sensor` | "mag" | mag, ir | - | Sensor de posición |
+| `pwm_min` | 200 | [100, 500] | - | PWM mínimo (vencer inercia) |
+| `pwm_max` | 700 | [300, 1023] | - | PWM máximo |
 
 ### Validación de setpoint
 
@@ -329,13 +350,19 @@ El modo agrega los siguientes campos al paquete de telemetría (`pendulum/teleme
 | `pid_error` | float | Error actual (setpoint - pos_actual) en cm |
 | `pid_integral` | float | Término integral acumulado |
 | `pid_derivada` | float | Término derivativo filtrado |
-| `pid_output` | float | Salida del controlador (PWM calculado) |
+| `pid_output` | float | Salida cruda del controlador (antes de saturación) |
+| `pid_output_sat` | float | Salida saturada (después de clamp a [pwm_min, pwm_max]) |
 | `pid_setpoint` | float | Setpoint configurado en cm |
 | `pid_kp` | float | Ganancia proporcional actual |
 | `pid_ki` | float | Ganancia integral actual |
 | `pid_kd` | float | Ganancia derivativa actual |
 | `pid_zona_seg` | float | Zona de seguridad en cm |
 | `pid_tolerancia` | float | Tolerancia de llegada en cm |
+| `pid_sensor_type` | int | Sensor activo: 0=magnético, 1=IR |
+| `pid_pwm_min` | int | PWM mínimo configurado |
+| `pid_pwm_max` | int | PWM máximo configurado |
+
+> **Nota v2**: `pid_output` muestra el valor crudo del PID; `pid_output_sat` muestra el valor aplicado al motor después del anti-windup y saturación.
 
 ### Ejemplo de telemetría
 
@@ -349,15 +376,21 @@ El modo agrega los siguientes campos al paquete de telemetría (`pendulum/teleme
   "pid_error": 2.65,
   "pid_integral": 125.3,
   "pid_derivada": -15.2,
-  "pid_output": 450.7,
+  "pid_output": 478.5,
+  "pid_output_sat": 450.0,
   "pid_setpoint": 45.0,
   "pid_kp": 8.0,
   "pid_ki": 0.1,
   "pid_kd": 0.5,
   "pid_zona_seg": 5.0,
-  "pid_tolerancia": 1.0
+  "pid_tolerancia": 1.0,
+  "pid_sensor_type": 0,
+  "pid_pwm_min": 200,
+  "pid_pwm_max": 700
 }
 ```
+
+> En este ejemplo, `pid_output=478.5` (crudo) fue saturado a `pid_output_sat=450.0` debido al límite `pwm_max=700` aplicado con clamp.
 
 ---
 
