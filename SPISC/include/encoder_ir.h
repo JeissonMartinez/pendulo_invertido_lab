@@ -37,6 +37,11 @@ float getRPM();
 float getVueltas();
 float getPositionCm();
 
+/** Modo debug — imprime pulsos por serial cada 100ms */
+void enableDebug();
+void disableDebug();
+bool isDebugEnabled();
+
 }  // namespace EncoderIR
 
 #endif // ENCODER_IR_H

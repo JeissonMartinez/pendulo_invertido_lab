@@ -50,7 +50,7 @@
 // ══════════════════════════════════════════════════
 // Constantes Dual-Core
 // ══════════════════════════════════════════════════
-#define SENSORS_TASK_PERIOD_MS   2      // 500 Hz
+#define SENSORS_TASK_PERIOD_MS   1      // 1000 Hz. | Antes 500 Hz
 #define SENSORS_TASK_STACK    4096      // bytes
 #define SENSORS_TASK_PRIORITY    5      // Alta prioridad
 
@@ -196,6 +196,19 @@ static void onMqttCommand(const char* topic, const char* payload) {
             SensorsI2C::calibrateMPU();
         } else {
             SensorsI2C::calibrateAngle();
+        }
+        return;
+    }
+
+    // Debug encoder IR
+    if (strcmp(topic, TOPIC_CMD_DEBUG) == 0) {
+        const char* encKey = strstr(payload, "\"encoder\"");
+        if (encKey) {
+            if (strstr(encKey, "\"on\"")) {
+                EncoderIR::enableDebug();
+            } else if (strstr(encKey, "\"off\"")) {
+                EncoderIR::disableDebug();
+            }
         }
         return;
     }

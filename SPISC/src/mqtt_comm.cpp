@@ -39,6 +39,7 @@ bool begin() {
         _bridge.subscribe(TOPIC_CMD_STOP);
         _bridge.subscribe(TOPIC_CMD_SWEEP);
         _bridge.subscribe(TOPIC_CMD_OPENLOOP);
+        _bridge.subscribe(TOPIC_CMD_DEBUG);
         
         // Registrar callback interno que encola comandos
         _bridge.onMessage(_internalCallback);

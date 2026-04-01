@@ -22,11 +22,18 @@
 #define LEDC_CH_L       1
 
 // ══════════════════════════════════════════════════
-// Encoder Infrarrojo HC-020K
+// Encoder Infrarrojo HC-020K (con PCNT)
 // ══════════════════════════════════════════════════
-#define PIN_ENCODER_IR   16
-#define PULSES_PER_REV   40
-#define CM_POR_PULSO     0.0504f
+#define PIN_ENCODER_IR     16
+#define PULSES_PER_REV     40
+#define CM_POR_PULSO       0.0992f  // Calibrado: 90cm / 907 pulsos (PCNT)
+
+// PCNT (Pulse Counter) Hardware
+#define PCNT_UNIT_ENCODER  PCNT_UNIT_0
+#define PCNT_CHANNEL_ENC   PCNT_CHANNEL_0
+#define PCNT_FILTER_VAL    100      // Filtro anti-glitch (~1.25µs @ 80MHz)
+#define PCNT_H_LIM         10000    // Límite superior antes de overflow
+#define PCNT_L_LIM         -10000   // Límite inferior antes de underflow
 
 // ══════════════════════════════════════════════════
 // Limit Switches XV-152-1C25 (NC + Pull-Up)

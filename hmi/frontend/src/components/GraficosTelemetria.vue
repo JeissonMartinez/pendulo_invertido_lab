@@ -87,8 +87,8 @@ const graficos = reactive([
     label: 'Ángulo',
     unit: '°',
     visible: props.graficosDefault ? props.graficosDefault.includes('angulo') : true,
-    min: -180,
-    max: 180,
+    min: -20,
+    max: 380,
     series: [
       { key: 'angle_pend', label: 'Péndulo', color: '#8C2981' },
     ],
@@ -109,8 +109,8 @@ const graficos = reactive([
     label: 'Posición',
     unit: 'cm',
     visible: props.graficosDefault ? props.graficosDefault.includes('posicion') : true,
-    min: 0,
-    max: 95,
+    min: -5,
+    max: 100,
     series: [
       { key: 'pos_ir_cm', label: 'IR', color: '#1E88E5' },
       { key: 'pos_mag_cm', label: 'Mag', color: '#43A047' },
@@ -121,8 +121,8 @@ const graficos = reactive([
     label: 'RPM',
     unit: 'rpm',
     visible: props.graficosDefault ? props.graficosDefault.includes('rpm') : false,
-    min: 0,
-    max: 600,
+    min: -5000,
+    max: 5000,
     series: [
       { key: 'rpm_ir', label: 'IR', color: '#E53935' },
       { key: 'rpm_mag', label: 'Mag', color: '#FF9800' },
