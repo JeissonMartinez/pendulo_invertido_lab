@@ -46,6 +46,7 @@
 // Modos
 #include "modes/rango_pwm_mode.h"
 #include "modes/lazo_abierto_mode.h"
+#include "modes/pid_posicion_mode.h"
 
 // ══════════════════════════════════════════════════
 // Constantes Dual-Core
@@ -127,6 +128,18 @@ static void buildTelemetry(TelemetryPacket& pkt) {
     pkt.ts       = millis();
     pkt.modo     = activeMode;
     pkt.ol_state = getActiveModeStateStr();
+
+    // Control PID Posición (valores de PidPosicionMode)
+    pkt.pid_error      = PidPosicionMode::getError();
+    pkt.pid_integral   = PidPosicionMode::getIntegral();
+    pkt.pid_derivada   = PidPosicionMode::getDerivada();
+    pkt.pid_output     = PidPosicionMode::getOutput();
+    pkt.pid_setpoint   = PidPosicionMode::getSetpoint();
+    pkt.pid_kp         = PidPosicionMode::getKp();
+    pkt.pid_ki         = PidPosicionMode::getKi();
+    pkt.pid_kd         = PidPosicionMode::getKd();
+    pkt.pid_zona_seg   = PidPosicionMode::getZonaSeguridad();
+    pkt.pid_tolerancia = PidPosicionMode::getTolerancia();
 }
 
 // ══════════════════════════════════════════════════
@@ -136,6 +149,7 @@ static const char* getActiveModeStateStr() {
     switch (activeMode) {
         case MODE_SWEEP_PWM:  return RangoPwmMode::getStateStr();
         case MODE_OPEN_LOOP:  return LazoAbiertoMode::getStateStr();
+        case MODE_PID_POS:    return PidPosicionMode::getStateStr();
         default:              return "IDLE";
     }
 }
@@ -155,6 +169,7 @@ static void switchMode(FirmwareMode newMode) {
     switch (newMode) {
         case MODE_SWEEP_PWM:  RangoPwmMode::begin(); break;
         case MODE_OPEN_LOOP:  LazoAbiertoMode::begin(); break;
+        case MODE_PID_POS:    PidPosicionMode::begin(); break;
         default: break;
     }
 }
@@ -171,6 +186,7 @@ static void onMqttCommand(const char* topic, const char* payload) {
         switch (activeMode) {
             case MODE_SWEEP_PWM:  RangoPwmMode::onCommand(topic, payload); break;
             case MODE_OPEN_LOOP:  LazoAbiertoMode::onCommand(topic, payload); break;
+            case MODE_PID_POS:    PidPosicionMode::onCommand(topic, payload); break;
             default: break;
         }
         return;
@@ -183,6 +199,7 @@ static void onMqttCommand(const char* topic, const char* payload) {
             FirmwareMode m = MODE_IDLE;
             if (strstr(modeKey, "\"SWEEP_PWM\""))   m = MODE_SWEEP_PWM;
             else if (strstr(modeKey, "\"OPEN_LOOP\"")) m = MODE_OPEN_LOOP;
+            else if (strstr(modeKey, "\"PID_POS\""))   m = MODE_PID_POS;
             else if (strstr(modeKey, "\"IDLE\""))      m = MODE_IDLE;
             switchMode(m);
         }
@@ -219,17 +236,20 @@ static void onMqttCommand(const char* topic, const char* payload) {
         return;
     }
 
-    // Auto-switch de modo según tópico del comando
+    // Auto-switch de modo segun topico del comando
     if (strcmp(topic, TOPIC_CMD_SWEEP) == 0 && activeMode != MODE_SWEEP_PWM) {
         switchMode(MODE_SWEEP_PWM);
     } else if (strcmp(topic, TOPIC_CMD_OPENLOOP) == 0 && activeMode != MODE_OPEN_LOOP) {
         switchMode(MODE_OPEN_LOOP);
+    } else if (strcmp(topic, TOPIC_CMD_PID_POS) == 0 && activeMode != MODE_PID_POS) {
+        switchMode(MODE_PID_POS);
     }
 
     // Enrutar al modo activo
     switch (activeMode) {
         case MODE_SWEEP_PWM:  RangoPwmMode::onCommand(topic, payload); break;
         case MODE_OPEN_LOOP:  LazoAbiertoMode::onCommand(topic, payload); break;
+        case MODE_PID_POS:    PidPosicionMode::onCommand(topic, payload); break;
         default: break;
     }
 }
@@ -291,6 +311,7 @@ void taskSensorsAndControl(void* pvParameters) {
         switch (activeMode) {
             case MODE_SWEEP_PWM:  RangoPwmMode::loop(); break;
             case MODE_OPEN_LOOP:  LazoAbiertoMode::loop(); break;
+            case MODE_PID_POS:    PidPosicionMode::loop(); break;
             default: break;
         }
 

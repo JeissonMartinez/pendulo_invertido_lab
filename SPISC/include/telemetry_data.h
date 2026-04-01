@@ -31,6 +31,7 @@ enum FirmwareMode {
     MODE_OPEN_LOOP,
     MODE_MANUAL,
     MODE_PID,
+    MODE_PID_POS,
     MODE_NEURAL,
     MODE_SMC,
     MODE_LQR,
@@ -81,6 +82,18 @@ struct TelemetryPacket {
     unsigned long ts;
     FirmwareMode  modo;
     const char*   ol_state;  // Sub-estado del modo activo (e.g. "OL_READY")
+
+    // Control PID Posición
+    float pid_error;         // Error actual: setpoint - pos_actual (cm)
+    float pid_integral;      // Término integral acumulado
+    float pid_derivada;      // Término derivativo (filtrado)
+    float pid_output;        // Salida del controlador (PWM)
+    float pid_setpoint;      // Setpoint configurado (cm)
+    float pid_kp;            // Constante proporcional
+    float pid_ki;            // Constante integral
+    float pid_kd;            // Constante derivativa
+    float pid_zona_seg;      // Zona de seguridad (cm)
+    float pid_tolerancia;    // Tolerancia de llegada (cm)
 };
 
 // Helpers para convertir enums a string
@@ -98,6 +111,7 @@ inline const char* firmwareModeToStr(FirmwareMode m) {
         case MODE_OPEN_LOOP:  return "OPEN_LOOP";
         case MODE_MANUAL:     return "MANUAL";
         case MODE_PID:        return "PID";
+        case MODE_PID_POS:    return "PID_POS";
         case MODE_NEURAL:     return "NEURAL";
         case MODE_SMC:        return "SMC";
         case MODE_LQR:        return "LQR";
@@ -113,6 +127,7 @@ inline FirmwareMode strToFirmwareMode(const char* s) {
     if (strcmp(s, "OPEN_LOOP")  == 0) return MODE_OPEN_LOOP;
     if (strcmp(s, "MANUAL")     == 0) return MODE_MANUAL;
     if (strcmp(s, "PID")        == 0) return MODE_PID;
+    if (strcmp(s, "PID_POS")    == 0) return MODE_PID_POS;
     if (strcmp(s, "NEURAL")     == 0) return MODE_NEURAL;
     if (strcmp(s, "SMC")        == 0) return MODE_SMC;
     if (strcmp(s, "LQR")        == 0) return MODE_LQR;
