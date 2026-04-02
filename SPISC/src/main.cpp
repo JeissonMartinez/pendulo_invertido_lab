@@ -450,7 +450,7 @@ void setup() {
     }
 
     // 10. Seguridad (timeout aumentado para tolerar reconexiones WiFi)
-    Safety::setMqttTimeout(5000);
+    Safety::setMqttTimeout(10000);
     Serial.println("[main] Safety OK");
 
     // 9. Modo inicial

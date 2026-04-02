@@ -6,8 +6,8 @@
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
 
-// Tamaño del ring buffer: ~30 s a 50 Hz
-const BUFFER_SIZE = 1500
+// Tamaño del ring buffer: ~60 s a 50 Hz
+const BUFFER_SIZE = 3000
 
 export const usePendulumStore = defineStore('pendulum', () => {
   // ── Estado de conexión ───────────────────────
@@ -45,6 +45,22 @@ export const usePendulumStore = defineStore('pendulum', () => {
     ls_start: false,
     ls_end: false,
     modo: '',
+    // PID Posición
+    pid_error: 0,
+    pid_integral: 0,
+    pid_derivada: 0,
+    pid_output: 0,
+    pid_output_sat: 0,
+    pid_setpoint: 0,
+    pid_kp: 0,
+    pid_ki: 0,
+    pid_kd: 0,
+    pid_zona_seg: 0,
+    pid_tolerancia: 0,
+    pid_sensor_type: 0,
+    pid_pwm_min: 0,
+    pid_pwm_max: 0,
+    pid_state: '',
   })
 
   // ── Estado del sistema ───────────────────────
@@ -81,6 +97,13 @@ export const usePendulumStore = defineStore('pendulum', () => {
     mpu_az: [],
     mpu_pitch: [],
     mpu_roll: [],
+    // PID Posición
+    pid_error: [],
+    pid_integral: [],
+    pid_derivada: [],
+    pid_output: [],
+    pid_output_sat: [],
+    pid_setpoint: [],
   })
 
   // ── Navegación multi-experimento ─────────────
@@ -104,6 +127,21 @@ export const usePendulumStore = defineStore('pendulum', () => {
     duration: 1.0,
   })
   const openLoopResults = ref([])
+
+  // ── Estado PID Posición ──────────────────────
+  const pidPosState = ref({
+    status: 'PID_IDLE',
+    kp: 8.0,
+    ki: 0.1,
+    kd: 0.5,
+    setpoint: 45.0,
+    zona_seguridad: 5.0,
+    tolerancia: 1.0,
+    sensor: 'mag',
+    pwm_min: 200,
+    pwm_max: 700,
+  })
+  const pidPosResults = ref([])
 
   // ── WebSocket send callback ──────────────────
   let _wsSend = null
@@ -158,6 +196,22 @@ export const usePendulumStore = defineStore('pendulum', () => {
       ls_start: d.ls_start ?? false,
       ls_end: d.ls_end ?? false,
       modo: d.modo ?? '',
+      // PID Posición
+      pid_error: d.pid_error ?? 0,
+      pid_integral: d.pid_integral ?? 0,
+      pid_derivada: d.pid_derivada ?? 0,
+      pid_output: d.pid_output ?? 0,
+      pid_output_sat: d.pid_output_sat ?? 0,
+      pid_setpoint: d.pid_setpoint ?? 0,
+      pid_kp: d.pid_kp ?? 0,
+      pid_ki: d.pid_ki ?? 0,
+      pid_kd: d.pid_kd ?? 0,
+      pid_zona_seg: d.pid_zona_seg ?? 0,
+      pid_tolerancia: d.pid_tolerancia ?? 0,
+      pid_sensor_type: d.pid_sensor_type ?? 0,
+      pid_pwm_min: d.pid_pwm_min ?? 0,
+      pid_pwm_max: d.pid_pwm_max ?? 0,
+      pid_state: d.pid_state ?? '',
       // Preservar sweep embebido en telametría
       sweep: d.sweep ?? null,
     }
@@ -191,6 +245,21 @@ export const usePendulumStore = defineStore('pendulum', () => {
       const norm = _normalizarTelemetria(datos)
       telemetria.value = norm
       _agregarAlHistorial(norm)
+      // Actualizar pidPosState.status desde telemetría cuando modo es PID_POS
+      if (norm.modo === 'PID_POS' || datos.modo === 'PID_POS') {
+        const pidSt = datos.ol_state ?? datos.pid_state ?? norm.pid_state ?? 'PID_IDLE'
+        pidPosState.value.status = pidSt
+        // Sincronizar parámetros desde telemetría si están disponibles
+        if (norm.pid_kp > 0) pidPosState.value.kp = norm.pid_kp
+        if (norm.pid_ki >= 0) pidPosState.value.ki = norm.pid_ki
+        if (norm.pid_kd >= 0) pidPosState.value.kd = norm.pid_kd
+        if (norm.pid_setpoint > 0) pidPosState.value.setpoint = norm.pid_setpoint
+        if (norm.pid_zona_seg > 0) pidPosState.value.zona_seguridad = norm.pid_zona_seg
+        if (norm.pid_tolerancia > 0) pidPosState.value.tolerancia = norm.pid_tolerancia
+        pidPosState.value.sensor = norm.pid_sensor_type === 1 ? 'ir' : 'mag'
+        if (norm.pid_pwm_min > 0) pidPosState.value.pwm_min = norm.pid_pwm_min
+        if (norm.pid_pwm_max > 0) pidPosState.value.pwm_max = norm.pid_pwm_max
+      }
       // Extraer sweep state desde telemetría si viene
       if (datos.sweep) {
         sweepState.value = {
@@ -213,6 +282,11 @@ export const usePendulumStore = defineStore('pendulum', () => {
           if (ls.start_switch) openLoopState.value.lastPosition = 'start'
           else if (ls.end_switch) openLoopState.value.lastPosition = 'end'
         }
+      }
+      // Actualizar pidPosState si estamos en modo PID_POS
+      if (datos.modo === 'PID_POS' || datos.mode === 'PID_POS') {
+        const st = datos.estado ?? datos.state ?? 'PID_IDLE'
+        pidPosState.value.status = st
       }
     } else if (tipo === 'limites') {
       // Normalizar nombres de limit switches
@@ -276,6 +350,13 @@ export const usePendulumStore = defineStore('pendulum', () => {
     h.mpu_az.push(datos.mpu_az ?? 0)
     h.mpu_pitch.push(datos.mpu_pitch ?? 0)
     h.mpu_roll.push(datos.mpu_roll ?? 0)
+    // PID Posición
+    h.pid_error.push(datos.pid_error ?? 0)
+    h.pid_integral.push(datos.pid_integral ?? 0)
+    h.pid_derivada.push(datos.pid_derivada ?? 0)
+    h.pid_output.push(datos.pid_output ?? 0)
+    h.pid_output_sat.push(datos.pid_output_sat ?? 0)
+    h.pid_setpoint.push(datos.pid_setpoint ?? 0)
 
     // Recortar al tamaño máximo
     if (h.ts.length > BUFFER_SIZE) {
@@ -295,6 +376,18 @@ export const usePendulumStore = defineStore('pendulum', () => {
       // Limitar a últimos 10000 registros
       if (openLoopResults.value.length > 10000) {
         openLoopResults.value.splice(0, openLoopResults.value.length - 10000)
+      }
+    }
+
+    // Si está en modo PID_POS, agregar a resultados PID
+    if (datos.modo === 'PID_POS' || experimentoActivo.value === 'pid_posicion') {
+      pidPosResults.value.push({
+        ...datos,
+        ts: ahora,
+        state: estado.value.state,
+      })
+      if (pidPosResults.value.length > 10000) {
+        pidPosResults.value.splice(0, pidPosResults.value.length - 10000)
       }
     }
   }
@@ -364,6 +457,43 @@ export const usePendulumStore = defineStore('pendulum', () => {
     openLoopResults.value = []
   }
 
+  // ── Acciones PID Posición ────────────────────
+  function enviarComandoPidPos(action, params = {}) {
+    const datos = { action, ...params }
+    enviarComando('cmd_pidpos', datos)
+  }
+
+  function homePidPos() {
+    enviarComandoPidPos('home')
+  }
+
+  function endPidPos() {
+    enviarComandoPidPos('end')
+  }
+
+  function configurarPidPos(config) {
+    // Actualizar estado local
+    Object.assign(pidPosState.value, config)
+    // Enviar comando de configuración
+    enviarComandoPidPos('config', config)
+  }
+
+  function ejecutarPidPos() {
+    enviarComandoPidPos('run')
+  }
+
+  function detenerPidPos() {
+    enviarComandoPidPos('stop')
+  }
+
+  function resetPidPos() {
+    enviarComandoPidPos('reset')
+  }
+
+  function limpiarResultadosPidPos() {
+    pidPosResults.value = []
+  }
+
   // ── Computed ─────────────────────────────────
   const estadoTexto = computed(() => estado.value.state)
   const modoTexto = computed(() => estado.value.mode)
@@ -386,6 +516,9 @@ export const usePendulumStore = defineStore('pendulum', () => {
     // Open Loop
     openLoopState,
     openLoopResults,
+    // PID Posición
+    pidPosState,
+    pidPosResults,
     // Computed
     estadoTexto,
     modoTexto,
@@ -408,5 +541,14 @@ export const usePendulumStore = defineStore('pendulum', () => {
     enviarImpulso,
     detenerMotor,
     limpiarResultadosOpenLoop,
+    // PID Posición actions
+    enviarComandoPidPos,
+    homePidPos,
+    endPidPos,
+    configurarPidPos,
+    ejecutarPidPos,
+    detenerPidPos,
+    resetPidPos,
+    limpiarResultadosPidPos,
   }
 })

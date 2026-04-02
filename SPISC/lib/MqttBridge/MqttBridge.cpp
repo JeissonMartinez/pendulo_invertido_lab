@@ -11,7 +11,7 @@ MqttBridge::MqttBridge()
     : _mqttClient(_wifiClient)
     , _callback(nullptr)
     , _lastReconnectAttempt(0)
-    , _reconnectInterval(1000)
+    , _reconnectInterval(500)  // Inicio más rápido (500ms vs 1s)
     , _subCount(0)
 {
     _instance = this;
@@ -24,9 +24,13 @@ bool MqttBridge::begin() {
         return false;
     }
 
+    // Configurar timeout del socket para detectar desconexiones más rápido
+    _wifiClient.setTimeout(5);  // 5 segundos timeout TCP
+    
     _mqttClient.setServer(MQTT_BROKER, MQTT_PORT);
     _mqttClient.setCallback(_staticCallback);
     _mqttClient.setBufferSize(1024);
+    _mqttClient.setKeepAlive(5);  // Keepalive MQTT cada 5 segundos (default: 15)
 
     _connectMqtt();
     return true;
@@ -76,11 +80,11 @@ void MqttBridge::loop() {
                           MQTT_BROKER, MQTT_PORT);
             
             if (_connectMqtt()) {
-                _reconnectInterval = 1000;  // Reset backoff
+                _reconnectInterval = 500;  // Reset backoff
                 Serial.println("[MqttBridge] MQTT conectado!");
             } else {
-                // Exponential backoff: 1s → 2s → 4s → ... → 30s max
-                _reconnectInterval = min(_reconnectInterval * 2, 30000UL);
+                // Exponential backoff: 500ms → 1s → 2s → ... → 5s max
+                _reconnectInterval = min(_reconnectInterval * 2, 5000UL);
                 Serial.printf("[MqttBridge] MQTT fallo. Reintento en %lu ms\n", 
                               _reconnectInterval);
             }

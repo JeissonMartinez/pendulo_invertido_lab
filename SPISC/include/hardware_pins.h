@@ -80,7 +80,7 @@
 // ══════════════════════════════════════════════════
 // Intervalos de publicación MQTT (ms)
 // ══════════════════════════════════════════════════
-#define TELEMETRY_INTERVAL_MS   200   // 5 Hz
+#define TELEMETRY_INTERVAL_MS   200   // 5 Hz (reduce carga WiFi/backend)
 #define STATUS_INTERVAL_MS      500   // 2 Hz
 
 // ══════════════════════════════════════════════════

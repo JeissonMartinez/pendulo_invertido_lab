@@ -114,6 +114,7 @@ const graficos = reactive([
     series: [
       { key: 'pos_ir_cm', label: 'IR', color: '#1E88E5' },
       { key: 'pos_mag_cm', label: 'Mag', color: '#43A047' },
+      { key: 'pid_setpoint', label: 'Setpoint', color: '#E91E63' },
     ],
   },
   {
@@ -162,6 +163,52 @@ const graficos = reactive([
     max: 1023,
     series: [
       { key: 'pwm', label: 'PWM', color: '#FC8961' },
+    ],
+  },
+  // ── Gráficos PID ─────────────────────────────
+  {
+    id: 'pid_output',
+    label: 'Salida PID',
+    unit: '',
+    visible: props.graficosDefault ? props.graficosDefault.includes('pid_output') : false,
+    min: null,
+    max: null,
+    series: [
+      { key: 'pid_output', label: 'Output', color: '#FF6F00' },
+      { key: 'pid_output_sat', label: 'Output Sat', color: '#E65100' },
+    ],
+  },
+  {
+    id: 'pid_error',
+    label: 'Error PID',
+    unit: 'cm',
+    visible: props.graficosDefault ? props.graficosDefault.includes('pid_error') : false,
+    min: null,
+    max: null,
+    series: [
+      { key: 'pid_error', label: 'Error', color: '#D32F2F' },
+    ],
+  },
+  {
+    id: 'pid_integral',
+    label: 'Integral PID',
+    unit: '',
+    visible: props.graficosDefault ? props.graficosDefault.includes('pid_integral') : false,
+    min: null,
+    max: null,
+    series: [
+      { key: 'pid_integral', label: 'Integral', color: '#7B1FA2' },
+    ],
+  },
+  {
+    id: 'pid_derivada',
+    label: 'Derivada PID',
+    unit: '',
+    visible: props.graficosDefault ? props.graficosDefault.includes('pid_derivada') : false,
+    min: null,
+    max: null,
+    series: [
+      { key: 'pid_derivada', label: 'Derivada', color: '#1976D2' },
     ],
   },
 ])

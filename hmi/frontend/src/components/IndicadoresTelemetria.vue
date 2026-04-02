@@ -79,14 +79,14 @@
           <span class="badge" :class="claseBadgeEstado">{{ estadoTexto }}</span>
         </div>
 
-        <!-- PWM con barra -->
+        <!-- PWM con barra (usa pid_output_sat si modo PID, sino pwm general) -->
         <div class="indicador">
           <span class="indicador-label">PWM</span>
-          <span class="indicador-valor">{{ t.pwm }}</span>
+          <span class="indicador-valor">{{ valorPwmMostrado }}</span>
           <div class="barra-pwm">
             <div
               class="barra-pwm-fill"
-              :style="{ width: (Math.abs(t.pwm) / 1023 * 100) + '%' }"
+              :style="{ width: (Math.abs(valorPwmMostrado) / 1023 * 100) + '%' }"
             ></div>
           </div>
         </div>
@@ -119,6 +119,16 @@ import { usePendulumStore } from '../stores/pendulumStore'
 
 const store = usePendulumStore()
 const t = computed(() => store.telemetria)
+
+// ── PWM mostrado según modo ──
+// En modo PID usa pid_output (salida cruda del controlador), sino el pwm general
+const valorPwmMostrado = computed(() => {
+  const modo = t.value.modo || store.estado.mode || ''
+  if (modo === 'PID_POS') {
+    return Math.round(t.value.pid_output ?? 0)
+  }
+  return t.value.pwm ?? 0
+})
 
 // ── Formateo de valores ──
 function fmt(val, decimals) {

@@ -25,6 +25,8 @@ TOPICO_CMD_CONFIG = "pendulum/cmd/config"
 TOPICO_CMD_STOP = "pendulum/cmd/stop"
 TOPICO_CMD_SWEEP = "pendulum/cmd/sweep"
 TOPICO_CMD_OPENLOOP = "pendulum/cmd/openloop"
+TOPICO_CMD_PID_POS = "pendulum/cmd/pidpos"
+TOPICO_TIME_SYNC = "pendulum/time"  # Sincronización de reloj ESP32
 
 # Resultados de barrido PWM
 TOPICO_SWEEP_RESULTS = "pendulum/sweep/results"
@@ -46,5 +48,5 @@ CORS_ORIGINS = [
 ]
 
 # ── Registro de datos ─────────────────────────────
-REGISTRO_BATCH_SIZE = 50           # Registros por lote de inserción
-REGISTRO_FLUSH_INTERVAL_S = 2.0   # Forzar flush cada N segundos
+REGISTRO_BATCH_SIZE = 100          # Registros por lote de inserción (reduce commits)
+REGISTRO_FLUSH_INTERVAL_S = 5.0   # Forzar flush cada N segundos (menos IO)

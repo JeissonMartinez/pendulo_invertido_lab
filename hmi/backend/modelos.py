@@ -119,6 +119,23 @@ class Telemetria(BaseModel):
     posicion: float = Field(0.0)
     direccion: int = Field(0)
 
+    # ── PID Posición ──────────────────────────────
+    pid_error: float = Field(0.0, description="Error de posición (setpoint - actual)")
+    pid_integral: float = Field(0.0, description="Término integral acumulado")
+    pid_derivada: float = Field(0.0, description="Término derivativo filtrado")
+    pid_output: float = Field(0.0, description="Salida PID antes de saturación")
+    pid_output_sat: float = Field(0.0, description="Salida PID saturada (PWM aplicado)")
+    pid_setpoint: float = Field(0.0, description="Setpoint de posición (cm)")
+    pid_kp: float = Field(0.0, description="Ganancia proporcional actual")
+    pid_ki: float = Field(0.0, description="Ganancia integral actual")
+    pid_kd: float = Field(0.0, description="Ganancia derivativa actual")
+    pid_zona_seg: float = Field(0.0, description="Zona de seguridad (cm)")
+    pid_tolerancia: float = Field(0.0, description="Tolerancia para considerar llegada (cm)")
+    pid_sensor_type: int = Field(0, description="Tipo de sensor: 0=mag, 1=ir")
+    pid_pwm_min: int = Field(0, description="PWM mínimo configurado")
+    pid_pwm_max: int = Field(0, description="PWM máximo configurado")
+    pid_state: str = Field("", description="Estado del modo PID: IDLE, RUNNING, etc.")
+
 
 class EstadoLimites(BaseModel):
     """Estado de limit switches."""
@@ -185,6 +202,20 @@ class ComandoOpenLoop(BaseModel):
 class ComandoSweep(BaseModel):
     """Control del barrido de rango operativo PWM."""
     action: str = Field("start", description="'start' para iniciar/reiniciar barrido")
+
+
+class ComandoPidPos(BaseModel):
+    """Comando para el modo PID de Posición."""
+    action: str = Field(..., description="'home', 'end', 'config', 'run', 'stop', 'reset'")
+    kp: float | None = Field(None, ge=0.1, le=50.0, description="Ganancia proporcional")
+    ki: float | None = Field(None, ge=0.0, le=10.0, description="Ganancia integral")
+    kd: float | None = Field(None, ge=0.0, le=5.0, description="Ganancia derivativa")
+    setpoint: float | None = Field(None, description="Posición objetivo (cm)")
+    zona_seguridad: float | None = Field(None, ge=2.0, le=20.0, description="Zona segura desde límites (cm)")
+    tolerancia: float | None = Field(None, ge=0.5, le=5.0, description="Tolerancia para llegada (cm)")
+    sensor: str | None = Field(None, description="Sensor de posición: 'mag' o 'ir'")
+    pwm_min: int | None = Field(None, ge=100, le=500, description="PWM mínimo")
+    pwm_max: int | None = Field(None, ge=300, le=1023, description="PWM máximo")
 
 
 # ══════════════════════════════════════════════════

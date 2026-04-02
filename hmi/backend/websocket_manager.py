@@ -41,21 +41,29 @@ class GestorWebSocket:
 
     # ── Broadcast a todos los clientes ────────────
     async def broadcast(self, mensaje: dict) -> None:
-        """Envía un mensaje JSON a todas las conexiones activas."""
+        """Envía un mensaje JSON a todas las conexiones activas (en paralelo)."""
         if not self._conexiones:
             return
 
         datos_text = orjson.dumps(mensaje).decode("utf-8")
-        desconectados: list[WebSocket] = []
-
-        for ws in self._conexiones:
+        
+        async def enviar_seguro(ws: WebSocket) -> WebSocket | None:
             try:
-                await ws.send_text(datos_text)
+                await asyncio.wait_for(ws.send_text(datos_text), timeout=0.5)
+                return None
             except Exception:
-                desconectados.append(ws)
-
-        for ws in desconectados:
-            self._conexiones.discard(ws)
+                return ws
+        
+        # Enviar a todos en paralelo con timeout
+        resultados = await asyncio.gather(
+            *[enviar_seguro(ws) for ws in self._conexiones],
+            return_exceptions=True
+        )
+        
+        # Remover conexiones fallidas
+        for ws in resultados:
+            if ws is not None and isinstance(ws, WebSocket):
+                self._conexiones.discard(ws)
 
     # ── Escucha de un cliente (comandos entrantes) ─
     async def escuchar(self, ws: WebSocket) -> None:
@@ -94,6 +102,7 @@ class GestorWebSocket:
             "cmd_stop": config.TOPICO_CMD_STOP,
             "cmd_sweep": config.TOPICO_CMD_SWEEP,
             "cmd_openloop": config.TOPICO_CMD_OPENLOOP,
+            "cmd_pidpos": config.TOPICO_CMD_PID_POS,
         }
 
         topico = mapa_topicos.get(tipo)

@@ -17,10 +17,18 @@
 #include "encoder_ir.h"
 #include "limit_switches.h"
 #include "sensors_i2c.h"
+#include "time_sync.h"
 #include <wifi_mqtt_config.h>
 #include <cstring>
 #include <cstdlib>
 #include <cmath>
+
+// Macro para logs con timestamp sincronizado
+#define LOG_PID(fmt, ...) do { \
+    char _ts[16]; \
+    TimeSync::formatTime(_ts); \
+    Serial.printf("[%s][pidpos] " fmt, _ts, ##__VA_ARGS__); \
+} while(0)
 
 namespace PidPosicionMode {
 
@@ -474,12 +482,12 @@ void loop() {
             
             // Validar que el setpoint sea válido
             if (!_isSetpointValid(_setpoint, _zonaSeguridad)) {
-                Serial.printf("[pidpos] ERROR: Setpoint %.1f inválido. Configurar primero.\n", _setpoint);
+                LOG_PID("ERROR: Setpoint %.1f inválido. Configurar primero.\n", _setpoint);
                 _changeState(PID_STOPPED);
             } else {
                 // Resetear variables del PID antes de iniciar
                 _resetPidVariables();
-                Serial.printf("[pidpos] Iniciando control PID → SP=%.1f cm\n", _setpoint);
+                LOG_PID("Iniciando control PID → SP=%.1f cm\n", _setpoint);
                 _changeState(PID_RUNNING);
             }
         }
@@ -521,13 +529,26 @@ void loop() {
 
     case PID_RUNNING:
         // Verificar límites físicos (seguridad máxima)
-        if (startActive || endActive) {
-            Motor::freno();
-            _atStart = startActive;
-            _atEnd = endActive;
-            Serial.println("[pidpos] Control detenido por limit switch.");
-            _changeState(PID_STOPPED);
-            break;
+        // Solo detener si el control quiere moverse HACIA el límite activo
+        {
+            float errorActual = _setpoint - posActual;
+            // START activo y queriendo ir hacia atrás (error < 0) → BLOQUEAR
+            bool blockedByStart = startActive && (errorActual < 0);
+            // END activo y queriendo ir hacia adelante (error > 0) → BLOQUEAR
+            bool blockedByEnd = endActive && (errorActual > 0);
+            
+            if (blockedByStart || blockedByEnd) {
+                Motor::freno();
+                _atStart = startActive;
+                _atEnd = endActive;
+                Serial.printf("[pidpos] Control detenido: límite %s activo, error=%.2f\n",
+                    blockedByStart ? "START" : "END", errorActual);
+                _changeState(PID_STOPPED);
+                break;
+            }
+            // Actualizar flags de posición si estamos en un límite pero moviéndonos bien
+            if (startActive) _atStart = true;
+            if (endActive) _atEnd = true;
         }
 
         // Verificar zona de peligro (aproximación a límites)
@@ -557,7 +578,7 @@ void loop() {
                 
                 if ((now - _inToleranceTime) >= SETTLE_TIME_MS) {
                     Motor::freno();
-                    Serial.printf("[pidpos] Setpoint alcanzado (pos=%.2f, SP=%.2f, err=%.3f)\n",
+                    LOG_PID("Setpoint alcanzado (pos=%.2f, SP=%.2f, err=%.3f)\n",
                         posActual, _setpoint, _error);
                     _changeState(PID_AT_TARGET);
                 }

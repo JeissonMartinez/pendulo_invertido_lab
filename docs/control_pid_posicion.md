@@ -2,7 +2,7 @@
 
 **Proyecto:** [SPISC — Sistema de Péndulo Invertido con Supervisión y Control](../README.md)  
 **Fecha:** 01/04/2026  
-**Última actualización:** 01/04/2026 (v2.0)  
+**Última actualización:** 02/04/2026 (v2.1)  
 **Autor:** Ing. Jeisson Martínez Flórez
 
 ---
@@ -13,6 +13,14 @@
 - [Arquitectura del modo](#arquitectura-del-modo)
 - [Máquina de estados](#máquina-de-estados)
 - [Comandos MQTT](#comandos-mqtt)
+- [Parámetros configurables](#parámetros-configurables)
+- [Algoritmo PID](#algoritmo-pid)
+- [Telemetría](#telemetría)
+- [Guía de uso](#guía-de-uso)
+- [Troubleshooting](#troubleshooting)
+- [Problemas conocidos y soluciones](#problemas-conocidos-y-soluciones)
+- [Mejoras futuras propuestas](#mejoras-futuras-propuestas)
+- [Referencias](#referencias)
 - [Parámetros configurables](#parámetros-configurables)
 - [Algoritmo PID](#algoritmo-pid)
 - [Zonas de seguridad](#zonas-de-seguridad)
@@ -587,6 +595,174 @@ mosquitto_pub -t "pendulum/cmd/pidpos" \
 # O mover setpoint más al centro
 mosquitto_pub -t "pendulum/cmd/pidpos" \
   -m '{"action":"config","setpoint":45}'
+```
+
+---
+
+## Problemas conocidos y soluciones
+
+Esta sección documenta los problemas identificados durante las pruebas de integración HMI-ESP32 y las soluciones implementadas (sesión de debugging 02/04/2026).
+
+### Pérdida de datos por desconexiones WiFi
+
+**Síntoma:** Gaps intermitentes en la telemetría CSV (hasta 47 segundos en casos extremos). Serial logs muestran `[mqttbr] Reconectando...` y backend reporta `[Errno 54] Connection reset by peer`.
+
+**Causa raíz:** El modo WiFi AP del ESP32 es inherentemente inestable para conexiones de larga duración. El ESP32 actúa como Access Point y el Mac se conecta como cliente, pero la conexión WiFi se reinicia periódicamente.
+
+**Soluciones implementadas:**
+
+1. **MQTT Keepalive agresivo** (`MqttBridge.cpp`):
+   ```cpp
+   _wifiClient.setTimeout(5);     // Socket timeout 5s
+   _mqttClient.setKeepAlive(5);   // Keepalive cada 5s
+   ```
+
+2. **Reconexión rápida** (`MqttBridge.cpp`):
+   - Backoff: 500ms inicial → 5s máximo (antes: 1s → 30s)
+   - Reintentos inmediatos tras desconexión
+
+3. **Timeout de seguridad aumentado** (`main.cpp`):
+   ```cpp
+   #define PID_POSICION_SAFETY_TIMEOUT_MS 10000  // Antes: 5000ms
+   ```
+   Permite que el control PID continúe durante reconexiones breves.
+
+**Resultado:** Reducción de ~60% en gaps de telemetría. El motor ya no se detiene por timeouts normales de reconexión.
+
+### Saturación del backend HMI
+
+**Síntoma:** Telemetría degrada progresivamente. Primeros 2 minutos: ~100ms entre muestras. Minuto 4+: gaps de 16-47 segundos. La base de datos SQLite y WebSocket acumulan backlog.
+
+**Causa raíz:** `await registrar_telemetria()` bloqueaba el loop de MQTT mientras escribía a SQLite. WebSocket broadcast era secuencial, un cliente lento bloqueaba a todos.
+
+**Soluciones implementadas:**
+
+1. **Telemetría fire-and-forget** (`mqtt_cliente.py`):
+   ```python
+   # Antes (bloqueante)
+   await registrar_telemetria(mensaje)
+   
+   # Después (no bloqueante)
+   asyncio.create_task(registrar_telemetria(mensaje))
+   ```
+
+2. **Broadcast WebSocket paralelo** (`websocket_manager.py`):
+   ```python
+   await asyncio.gather(
+       *[asyncio.wait_for(ws.send_json(data), timeout=0.5) 
+         for ws in clients],
+       return_exceptions=True
+   )
+   ```
+
+3. **Batch settings optimizados** (`config.py`):
+   - `REGISTRO_BATCH_SIZE`: 50 → 100
+   - `REGISTRO_FLUSH_INTERVAL_S`: 2 → 5
+
+4. **Frecuencia de telemetría reducida** (`hardware_pins.h`):
+   - `TELEMETRY_INTERVAL_MS`: 100 → 200 (10 Hz → 5 Hz)
+
+**Resultado:** Backend ya no se satura. Los gaps restantes son 100% atribuibles a desconexiones WiFi.
+
+### Correlación de timestamps difícil
+
+**Síntoma:** Logs del Serial Monitor no tenían timestamps, imposible correlacionar con datos CSV para debugging.
+
+**Solución:** Implementado módulo de sincronización de tiempo:
+
+**Nuevos archivos:**
+- `SPISC/include/time_sync.h`
+- `SPISC/src/time_sync.cpp`
+
+**Funcionamiento:**
+1. Backend envía timestamp ISO 8601 cada 10s a `pendulum/cmd/time_sync`
+2. ESP32 parsea y calcula offset con `millis()`
+3. Logs PID usan macro con timestamp sincronizado:
+   ```
+   [03:44:15.847][pidpos] Estado → PID_RUNNING
+   ```
+
+**Configuración MQTT:**
+- Tópico: `pendulum/cmd/time_sync` (en `wifi_mqtt_config.h`)
+- Formato: `{"timestamp": "2026-04-02T03:44:15.847Z"}`
+
+---
+
+## Mejoras futuras propuestas
+
+Las siguientes mejoras se proponen para resolver los problemas de conectividad WiFi que persisten:
+
+### 1. Ring buffer en firmware (Prioridad: Alta)
+
+Almacenar telemetría localmente cuando MQTT está desconectado y enviar el buffer al reconectar.
+
+```cpp
+// Pseudocódigo propuesto
+#define RING_BUFFER_SIZE 500  // ~100 segundos a 5 Hz
+CircularBuffer<TelemetryPacket, RING_BUFFER_SIZE> telemetryBuffer;
+
+void sendTelemetry() {
+    if (mqttConnected) {
+        // Enviar buffer acumulado primero
+        while (!telemetryBuffer.isEmpty()) {
+            publish(telemetryBuffer.shift());
+        }
+        // Luego telemetría actual
+        publish(currentTelemetry);
+    } else {
+        // Guardar para después
+        telemetryBuffer.push(currentTelemetry);
+    }
+}
+```
+
+### 2. MQTT QoS 1 con ACK (Prioridad: Media)
+
+Actualmente se usa QoS 0 (fire-and-forget). QoS 1 garantiza entrega con acknowledgment.
+
+**Trade-off:** Mayor overhead de red, pero garantiza que cada paquete llegue al menos una vez.
+
+### 3. WiFi modo Station (Prioridad: Alta)
+
+Cambiar de AP mode a Station mode conectándose a un router existente:
+
+**Ventajas:**
+- Conexión WiFi más estable
+- ESP32 no tiene que manejar clientes
+- Posibilidad de Internet para NTP real
+
+**Desventajas:**
+- Requiere router disponible
+- Configuración de red previa
+
+### 4. Protocolo UDP para telemetría (Prioridad: Baja)
+
+Reemplazar MQTT por UDP broadcast para telemetría de alta frecuencia:
+
+**Ventajas:**
+- Sin overhead de TCP handshake
+- Sin colas de MQTT
+- Latencia mínima
+
+**Desventajas:**
+- No hay garantía de entrega
+- Implementación custom
+- MQTT sigue necesario para comandos
+
+### 5. Telemetría adaptativa (Prioridad: Media)
+
+Ajustar frecuencia de telemetría dinámicamente según calidad de conexión:
+
+```cpp
+// Pseudocódigo propuesto
+void adjustTelemetryRate() {
+    float packetLoss = getRecentPacketLoss();
+    if (packetLoss > 0.2) {
+        telemetryInterval = min(telemetryInterval * 1.5, 500);  // Más lento
+    } else if (packetLoss < 0.05) {
+        telemetryInterval = max(telemetryInterval * 0.8, 100);  // Más rápido
+    }
+}
 ```
 
 ---

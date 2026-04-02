@@ -7,7 +7,10 @@
  */
 #include "mqtt_comm.h"
 #include "hardware_pins.h"
+#include "time_sync.h"
 #include <wifi_mqtt_config.h>
+#include <cstring>
+#include <cstdlib>
 
 namespace MqttComm {
 
@@ -24,6 +27,20 @@ static CommandCallback _commandCallback = nullptr;
 // Callback interno que encola comandos (Dual-Core)
 // ══════════════════════════════════════════════════
 static void _internalCallback(const char* topic, const char* payload) {
+    // Procesar sincronización de tiempo directamente (no encolar)
+    if (strcmp(topic, TOPIC_TIME_SYNC) == 0) {
+        // Parseo simple: {"ts": 1234567890123}
+        const char* tsStart = strstr(payload, "\"ts\":");
+        if (tsStart) {
+            tsStart += 5;  // Saltar "ts":
+            while (*tsStart == ' ') tsStart++;  // Saltar espacios
+            uint64_t serverTimeMs = strtoull(tsStart, nullptr, 10);
+            if (serverTimeMs > 0) {
+                TimeSync::setServerTime(serverTimeMs);
+            }
+        }
+        return;
+    }
     // Encolar comando para procesamiento thread-safe en Core 0
     enqueueCommand(topic, payload);
 }
@@ -39,7 +56,9 @@ bool begin() {
         _bridge.subscribe(TOPIC_CMD_STOP);
         _bridge.subscribe(TOPIC_CMD_SWEEP);
         _bridge.subscribe(TOPIC_CMD_OPENLOOP);
+        _bridge.subscribe(TOPIC_CMD_PID_POS);
         _bridge.subscribe(TOPIC_CMD_DEBUG);
+        _bridge.subscribe(TOPIC_TIME_SYNC);  // Sincronización de tiempo
         
         // Registrar callback interno que encola comandos
         _bridge.onMessage(_internalCallback);

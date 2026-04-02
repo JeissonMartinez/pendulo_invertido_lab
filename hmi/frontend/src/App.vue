@@ -26,6 +26,7 @@
       <div class="app-content">
         <TabRangoPWM v-if="store.experimentoActivo === 'rango_pwm'" />
         <TabLazoAbierto v-if="store.experimentoActivo === 'lazo_abierto'" />
+        <TabControlPidPosicion v-if="store.experimentoActivo === 'pid_posicion'" />
       </div>
     </div>
 
@@ -45,6 +46,7 @@ import PanelConexion from './components/PanelConexion.vue'
 import NavSidebar from './components/NavSidebar.vue'
 import TabRangoPWM from './components/tabs/TabRangoPWM.vue'
 import TabLazoAbierto from './components/tabs/TabLazoAbierto.vue'
+import TabControlPidPosicion from './components/tabs/TabControlPidPosicion.vue'
 
 const store = usePendulumStore()
 const { latencia, reconectarManual } = useWebSocket()

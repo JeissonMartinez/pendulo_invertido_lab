@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import time
 from typing import TYPE_CHECKING
 
 import aiomqtt
@@ -73,12 +74,18 @@ class ClienteMQTT:
                     )
 
                     await client.subscribe(config.TOPICO_SUB_TODOS)
+                    
+                    # Iniciar tarea de sincronización de tiempo
+                    sync_task = asyncio.create_task(self._loop_time_sync())
 
-                    async for msg in client.messages:
-                        try:
-                            await self._procesar_mensaje(msg)
-                        except Exception:
-                            logger.exception("Error procesando mensaje MQTT %s", msg.topic)
+                    try:
+                        async for msg in client.messages:
+                            try:
+                                await self._procesar_mensaje(msg)
+                            except Exception:
+                                logger.exception("Error procesando mensaje MQTT %s", msg.topic)
+                    finally:
+                        sync_task.cancel()
 
             except aiomqtt.MqttError as e:
                 logger.warning("Conexión MQTT perdida: %s — reintentando en %ds", e, espera)
@@ -103,29 +110,50 @@ class ClienteMQTT:
         if topico == config.TOPICO_TELEMETRIA:
             self._ultima_telemetria = datos
             if self._gestor_ws:
-                await self._gestor_ws.broadcast({"tipo": "telemetria", "datos": datos})
+                # Fire-and-forget: no bloquea el loop de procesamiento MQTT
+                asyncio.create_task(self._gestor_ws.broadcast({"tipo": "telemetria", "datos": datos}))
             if self._registro:
-                await self._registro.registrar_telemetria(datos)
+                # Fire-and-forget: registro asíncrono sin bloquear MQTT
+                asyncio.create_task(self._registro.registrar_telemetria(datos))
 
         elif topico == config.TOPICO_ESTADO:
             self._ultimo_estado = datos
             if self._gestor_ws:
-                await self._gestor_ws.broadcast({"tipo": "estado", "datos": datos})
+                asyncio.create_task(self._gestor_ws.broadcast({"tipo": "estado", "datos": datos}))
             if self._registro:
                 await self._registro.registrar_evento("estado", datos)
 
         elif topico == config.TOPICO_LIMITES:
             self._ultimos_limites = datos
             if self._gestor_ws:
-                await self._gestor_ws.broadcast({"tipo": "limites", "datos": datos})
+                asyncio.create_task(self._gestor_ws.broadcast({"tipo": "limites", "datos": datos}))
             if self._registro:
                 await self._registro.registrar_evento("limites", datos)
 
         elif topico == config.TOPICO_SWEEP_RESULTS:
             if self._gestor_ws:
-                await self._gestor_ws.broadcast({"tipo": "sweep_results", "datos": datos})
+                asyncio.create_task(self._gestor_ws.broadcast({"tipo": "sweep_results", "datos": datos}))
             if self._registro:
                 await self._registro.registrar_evento("sweep_results", datos)
+
+    # ── Loop de sincronización de tiempo ───────────
+    async def _loop_time_sync(self) -> None:
+        """Envía el timestamp del servidor cada 10 segundos para sincronizar el ESP32."""
+        try:
+            while True:
+                if self._client:
+                    ts_ms = int(time.time() * 1000)
+                    try:
+                        await self._client.publish(
+                            config.TOPICO_TIME_SYNC,
+                            orjson.dumps({"ts": ts_ms})
+                        )
+                        logger.debug("Time sync enviado: %d", ts_ms)
+                    except aiomqtt.MqttError:
+                        pass  # Se manejará en el loop principal
+                await asyncio.sleep(10)
+        except asyncio.CancelledError:
+            pass
 
     # ── Publicación de comandos ───────────────────
     async def publicar(self, topico: str, payload: dict) -> bool:
