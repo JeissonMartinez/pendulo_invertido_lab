@@ -15,7 +15,7 @@
   <img src="https://img.shields.io/badge/Vue.js-3.5-42b883?logo=vuedotjs" alt="Vue.js">
   <img src="https://img.shields.io/badge/FastAPI-0.115-009688?logo=fastapi" alt="FastAPI">
   <img src="https://img.shields.io/badge/MQTT-Mosquitto-660066?logo=eclipsemosquitto" alt="MQTT">
-  <img src="https://img.shields.io/badge/Python-3.14-3776AB?logo=python" alt="Python">
+  <img src="https://img.shields.io/badge/Python-3.10+-3776AB?logo=python" alt="Python">
 </p>
 
 ---
@@ -90,9 +90,10 @@ El sistema permite:
 | Motor driver | BTS7960 (H-Bridge, PWM 25 kHz, 10-bit) | GPIO 12, 14, 26, 27 |
 | Encoder ángulo | AS5600 magnético absoluto 12-bit | I2C Bus 0 (0x36) |
 | Encoder posición | AS5600 magnético multi-vuelta | I2C Bus 1 (0x36) |
+| Encoder IR (motor) | HC-020K (opción para posición) | GPIO 16 |
 | Pantalla | OLED SSD1306 128×64 | I2C Bus 0 (0x3C) |
 | Limit switches | XV-152-1C25 × 2 (NC + Pull-Up) | GPIO 32, 33 |
-| Encoder IR (motor) | HC-020K (20 PPR) | GPIO 16 |
+| IMU (opcional) | MPU6050 | I2C Bus 0 (0x68) |
 
 ### Mapa de GPIOs
 
@@ -108,32 +109,70 @@ El sistema permite:
 ### Especificaciones de la pista
 
 - **Recorrido útil:** ~90 cm
-- **Constante encoder:** 0.0504 cm/pulso
-- **Rango operativo PWM:** 250–800 (por debajo de 250 el motor no se mueve)
+- **Constante encoder magnético:** 0.0115780 cm/grado
+- **Constante encoder IR:** 0.0992 cm/pulso (calibrada)
+- **Rango operativo PWM:** 200–700 (por debajo de 200 el motor no se mueve)
 
 ---
 
 ## Estructura del proyecto
 
 ```
-Proyecto_pendulo_invertido/
+pendulo_invertido/
 │
 ├── SPISC/                          # Firmware ESP32 (PlatformIO)
 │   ├── platformio.ini              # Config multi-entorno
 │   ├── include/
-│   │   └── wifi_mqtt_config.h      # Credenciales WiFi + MQTT (no versionado)
+│   │   ├── wifi_mqtt_config.h      # Credenciales WiFi + MQTT (no versionado)
+│   │   ├── hardware_pins.h         # Definición de pines GPIO
+│   │   ├── telemetry_data.h        # Estructuras de telemetría unificada
+│   │   ├── motor_control.h         # Control del motor BTS7960
+│   │   ├── sensors_i2c.h           # Sensores I2C (AS5600, MPU6050)
+│   │   ├── encoder_ir.h            # Encoder infrarrojo HC-020K
+│   │   ├── limit_switches.h        # Interruptores de límite
+│   │   ├── mqtt_comm.h             # Comunicación MQTT
+│   │   ├── display_oled.h          # Pantalla OLED SSD1306
+│   │   ├── safety.h                # Módulo de seguridad
+│   │   └── time_sync.h             # Sincronización de tiempo
 │   ├── lib/
 │   │   ├── MqttBridge/             # Librería WiFi + MQTT reusable
 │   │   ├── Neural_Networks_FF/     # Red neuronal feedforward
 │   │   └── Dynamic_Array/          # Arreglos dinámicos
 │   └── src/
-│       ├── main.cpp                # Firmware principal (OLED + AS5600 + control)
-│       ├── rango_pwm.cpp           # Barrido automático de rango PWM
-│       └── test_connectivity.cpp   # Test WiFi + MQTT
+│       ├── main.cpp                # Orquestador dual-core
+│       ├── modes/                  # Modos de control modulares
+│       │   ├── lazo_abierto_mode.h/cpp
+│       │   ├── rango_pwm_mode.h/cpp
+│       │   └── pid_posicion_mode.h/cpp
+│       ├── motor_control.cpp       # Implementación motor
+│       ├── sensors_i2c.cpp         # Lectura de sensores
+│       ├── encoder_ir.cpp          # Encoder infrarrojo
+│       ├── limit_switches.cpp      # Limit switches
+│       ├── mqtt_comm.cpp           # Publicación MQTT
+│       ├── display_oled.cpp        # Renderizado OLED
+│       ├── safety.cpp              # Lógica de seguridad
+│       └── time_sync.cpp           # Sincronización NTP
 │
 ├── hmi/                            # Interfaz HMI Web
 │   ├── backend/                    # FastAPI + aiomqtt + SQLite
+│   │   ├── app.py                  # Endpoints REST/WebSocket
+│   │   ├── config.py               # Configuración y tópicos MQTT
+│   │   ├── modelos.py              # Schemas Pydantic
+│   │   ├── mqtt_cliente.py         # Cliente MQTT async
+│   │   ├── websocket_manager.py    # Gestor WebSocket
+│   │   └── registro_datos.py       # Persistencia SQLite
 │   ├── frontend/                   # Vue.js 3 + Pinia + uPlot
+│   │   └── src/
+│   │       ├── stores/pendulumStore.js
+│   │       ├── composables/useWebSocket.js
+│   │       └── components/
+│   │           ├── tabs/           # Pestañas de experimentos
+│   │           │   ├── TabRangoPWM.vue
+│   │           │   ├── TabLazoAbierto.vue
+│   │           │   └── TabControlPidPosicion.vue
+│   │           ├── AnimacionPendulo.vue
+│   │           ├── GraficosTelemetria.vue
+│   │           └── PanelControl.vue
 │   ├── mock/                       # Simulador físico del péndulo
 │   ├── mosquitto/                  # Config del broker MQTT
 │   └── README.md                   # Documentación detallada del HMI
@@ -142,13 +181,17 @@ Proyecto_pendulo_invertido/
 │   ├── Encoder_test/               # Subproyecto PlatformIO (encoder + motor)
 │   ├── control_neuronal.ino        # Control neuronal (versión .ino)
 │   ├── pendulo_pid_final.ino       # PID cascada
-│   ├── test_limit_switches.ino     # Test de limit switches
-│   ├── test_mpu6050.ino            # Test de IMU MPU6050
 │   └── ...                         # Tests de sensores y actuadores
 │
-├── docs/
-│   └── plan_mejoras.md             # Plan de fases de desarrollo
+├── docs/                           # Documentación técnica
+│   ├── plan_mejoras.md             # Plan de fases de desarrollo
+│   ├── control_pid_posicion.md     # Documentación del PID posición
+│   ├── calibracion_posicion_ir.md  # Calibración encoder IR
+│   ├── calibracion_posicion_mag.md # Calibración encoder magnético
+│   ├── config_dual_core.md         # Arquitectura dual-core
+│   └── plan_dual_core.md           # Plan de implementación dual-core
 │
+├── datas/                          # Datos de experimentos (CSVs)
 └── img/                            # Fotos y esquemas del prototipo
 ```
 
@@ -274,9 +317,9 @@ pkill mosquitto; pkill -f uvicorn
 
 | Capa | Tecnología | Descripción |
 |---|---|---|
-| Frontend | Vue.js 3 + Pinia + uPlot | UI reactiva con gráficos de alto rendimiento |
-| Backend | FastAPI + aiomqtt + aiosqlite | API REST + WebSocket + logging async |
-| Broker | Mosquitto | Enrutamiento MQTT |
+| Frontend | Vue.js 3.5 + Pinia 2.3 + uPlot 1.6 | UI reactiva con gráficos de alto rendimiento |
+| Backend | FastAPI 0.115 + aiomqtt 2.3 + aiosqlite 0.21 | API REST + WebSocket + logging async |
+| Broker | Mosquitto 2.x | Enrutamiento MQTT |
 | Base de datos | SQLite (async) | Telemetría + registro de eventos |
 
 ### Funcionalidades
@@ -284,9 +327,13 @@ pkill mosquitto; pkill -f uvicorn
 - **Telemetría en tiempo real** con gráficos uPlot (~50 Hz)
 - **Animación SVG** del carro + péndulo + pista + limit switches
 - **Panel de conexión** con indicadores WS / MQTT / ESP32
-- **Navegación por tabs** para diferentes experimentos
-- **Barrido PWM** automatizado con tabla de resultados + exportación CSV
+- **Navegación por tabs** para diferentes experimentos:
+  - **Barrido PWM:** Caracterización del rango operativo con tabla de resultados
+  - **Lazo Abierto:** Movimientos controlados con homing automático
+  - **PID Posición:** Control de posición con configuración de ganancias en vivo
 - **Parada de emergencia** desde cualquier pantalla
+- **Editor de parámetros** para configuración dinámica del controlador
+- **Exportación CSV** de datos experimentales
 - **Modo mock** con simulador de física para desarrollo sin hardware
 
 > La documentación completa del HMI está en [`hmi/README.md`](hmi/README.md).
@@ -295,12 +342,34 @@ pkill mosquitto; pkill -f uvicorn
 
 ## Firmware ESP32
 
-El proyecto PlatformIO (`SPISC/`) contiene múltiples entornos de compilación:
+El proyecto PlatformIO (`SPISC/`) implementa una **arquitectura dual-core** para separar las tareas críticas de control de las comunicaciones:
+
+### Arquitectura Dual-Core
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│  CORE 0 — Sensores y Control (1000 Hz, crítico)            │
+│    - Lectura de sensores cada 1ms                          │
+│    - Procesamiento de comandos MQTT (desde cola)           │
+│    - Verificación de seguridad y límites                   │
+│    - Ejecución de modos de control                         │
+│    - Watchdog de seguridad                                 │
+└─────────────────────────────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────────┐
+│  CORE 1 — Comunicación (flexible, no crítico)              │
+│    - MQTT keep-alive y reconexión                          │
+│    - Publicación de telemetría (5 Hz)                      │
+│    - Publicación de estado (2 Hz)                          │
+│    - Actualización de OLED (2 Hz)                          │
+└─────────────────────────────────────────────────────────────┘
+```
+
+### Entornos de compilación
 
 | Entorno | Archivo | Descripción |
 |---|---|---|
-| `esp32dev` | `main.cpp` | Firmware principal — control neuronal FF + swing-up + OLED |
-| `rango_pwm` | `rango_pwm.cpp` | Barrido incremental de rango operativo PWM vía MQTT |
+| `esp32dev` | `main.cpp` | Firmware principal modular — todos los modos de control |
+| `rango_pwm` | `rango_pwm.cpp` | Barrido incremental de rango operativo PWM (standalone) |
 | `test_connectivity` | `test_connectivity.cpp` | Verificación de conexión WiFi + MQTT |
 
 ### Librerías propias
@@ -315,18 +384,56 @@ El proyecto PlatformIO (`SPISC/`) contiene múltiples entornos de compilación:
 
 ## Modos de control
 
-El sistema está diseñado para soportar múltiples estrategias de control intercambiables en runtime:
+El sistema utiliza una arquitectura modular (Strategy pattern) para soportar múltiples estrategias de control intercambiables en runtime vía MQTT:
 
-| Modo | Estado | Descripción |
+### Modos implementados
+
+| Modo | Enum | Descripción | Estado |
+|---|---|---|---|
+| **Lazo Abierto** | `MODE_OPEN_LOOP` | Movimientos controlados con homing automático | ✅ Completo |
+| **Barrido PWM** | `MODE_SWEEP_PWM` | Caracterización del rango operativo del motor | ✅ Completo |
+| **PID Posición** | `MODE_PID_POS` | Control PID discreto para posicionar el carro | ✅ Completo |
+| **Idle** | `MODE_IDLE` | Estado de reposo, motor detenido | ✅ Completo |
+
+### Modos planificados
+
+| Modo | Enum | Descripción |
 |---|---|---|
-| **Manual** | Planificado | Control directo de PWM desde la HMI |
-| **PID Cascada** | Planificado | Lazo exterior (posición) + lazo interior (ángulo) |
-| **Red Neuronal FF** | Implementado | Red 3→3→1 con entrenamiento online |
-| **SMC** | Planificado | Régimen deslizante — robusto ante perturbaciones |
-| **LQR** | Planificado | Regulador cuadrático lineal — control óptimo |
-| **Fuzzy** | Planificado | Control difuso basado en reglas heurísticas |
-| **MRAC** | Planificado | Control adaptativo por modelo de referencia |
-| **MPC** | Planificado | Control predictivo con horizonte finito |
+| **Manual** | `MODE_MANUAL` | Control directo de PWM desde la HMI |
+| **PID Cascada** | `MODE_PID` | Lazo exterior (posición) + lazo interior (ángulo) |
+| **Red Neuronal FF** | `MODE_NEURAL` | Red 3→3→1 con entrenamiento online |
+| **SMC** | `MODE_SMC` | Régimen deslizante — robusto ante perturbaciones |
+| **LQR** | `MODE_LQR` | Regulador cuadrático lineal — control óptimo |
+| **Fuzzy** | `MODE_FUZZY` | Control difuso basado en reglas heurísticas |
+| **MRAC** | `MODE_MRAC` | Control adaptativo por modelo de referencia |
+| **MPC** | `MODE_MPC` | Control predictivo con horizonte finito |
+
+### Características del PID Posición
+
+- Frecuencia de control: 1000 Hz (Core 0)
+- Sensor configurable: AS5600 magnético o HC-020K infrarrojo
+- Anti-windup con saturación de integral
+- Filtro derivativo pasa-bajos (α = 0.2)
+- Zonas de seguridad configurables
+- Telemetría extendida: error, integral, derivada, salida, setpoint
+- Configuración dinámica de ganancias Kp, Ki, Kd vía MQTT
+
+> Documentación detallada en [`docs/control_pid_posicion.md`](docs/control_pid_posicion.md)
+
+---
+
+## Documentación
+
+| Documento | Descripción |
+|---|---|
+| [`docs/control_pid_posicion.md`](docs/control_pid_posicion.md) | Documentación completa del modo PID Posición |
+| [`docs/calibracion_posicion_ir.md`](docs/calibracion_posicion_ir.md) | Calibración del encoder infrarrojo HC-020K |
+| [`docs/calibracion_posicion_mag.md`](docs/calibracion_posicion_mag.md) | Calibración del encoder magnético AS5600 |
+| [`docs/config_dual_core.md`](docs/config_dual_core.md) | Configuración de la arquitectura dual-core |
+| [`docs/plan_dual_core.md`](docs/plan_dual_core.md) | Plan de implementación dual-core |
+| [`docs/plan_mejoras.md`](docs/plan_mejoras.md) | Roadmap general del proyecto |
+| [`docs/plan_wifi_ap.md`](docs/plan_wifi_ap.md) | Plan para modo AP del WiFi |
+| [`hmi/README.md`](hmi/README.md) | Documentación completa del HMI Web |
 
 ---
 
@@ -334,11 +441,15 @@ El sistema está diseñado para soportar múltiples estrategias de control inter
 
 | Fase | Descripción | Estado |
 |---|---|---|
-| **1** | Limit switches XV-152-1C25 — calibración + seguridad fail-safe | Documentado |
-| **2** | Encoder IR HC-020K — medición de RPM del motor | Documentado |
-| **3** | IMU MPU6050 — aceleración y orientación del carro | Documentado |
-| **4** | HMI Web (Vue.js + MQTT + FastAPI) | **Activo** (v0.3.0) |
-| **5** | Arquitectura modular de modos de control (Strategy pattern) | Planificado |
+| **1** | Limit switches XV-152-1C25 — calibración + seguridad fail-safe | ✅ Completado |
+| **2** | Encoder IR HC-020K — medición de RPM del motor | ✅ Completado |
+| **3** | Encoder magnético AS5600 — posición precisa del carro | ✅ Completado |
+| **4** | HMI Web (Vue.js + MQTT + FastAPI) | ✅ Activo (v0.3.0) |
+| **5** | Arquitectura dual-core ESP32 (Core 0: control, Core 1: comunicación) | ✅ Completado |
+| **6** | Control PID de Posición con telemetría extendida | ✅ Completado |
+| **7** | Control PID Cascada (ángulo + posición) para equilibrar péndulo | En progreso |
+| **8** | Controladores avanzados (SMC, LQR, MPC) | Planificado |
+| **9** | Red neuronal con entrenamiento online | Planificado |
 
 > El detalle completo de cada fase está en [`docs/plan_mejoras.md`](docs/plan_mejoras.md).
 
@@ -351,5 +462,5 @@ Proyecto académico de ingeniería. Consultar con el autor para uso o distribuci
 ---
 
 <p align="center">
-  <sub>Ing. Jeisson Martinez — 2026</sub>
+  <sub>Ing. Jeisson Martinez — Abril 2026</sub>
 </p>
