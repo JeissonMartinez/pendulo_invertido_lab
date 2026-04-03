@@ -25,7 +25,8 @@ bool MqttBridge::begin() {
     }
 
     // Configurar timeout del socket para detectar desconexiones más rápido
-    _wifiClient.setTimeout(5);  // 5 segundos timeout TCP
+    _wifiClient.setTimeout(5);    // 5 segundos timeout TCP
+    _wifiClient.setNoDelay(true); // Desactivar Nagle: enviar paquetes inmediatamente
     
     _mqttClient.setServer(MQTT_BROKER, MQTT_PORT);
     _mqttClient.setCallback(_staticCallback);
@@ -96,6 +97,7 @@ void MqttBridge::loop() {
 
 bool MqttBridge::publish(const char* topic, const char* payload) {
     if (!_mqttClient.connected()) return false;
+    // setNoDelay(true) ya configurado en begin() para enviar paquetes inmediatamente
     return _mqttClient.publish(topic, payload);
 }
 
@@ -140,6 +142,7 @@ bool MqttBridge::_connectWifi() {
 }
 
 // ── Modo Access Point ────────────────────────────
+#ifdef CFG_WIFI_AP
 bool MqttBridge::_connectWifiAP() {
     Serial.println("[MqttBridge] Iniciando modo Access Point...");
     
@@ -180,6 +183,7 @@ bool MqttBridge::_connectWifiAP() {
     
     return true;
 }
+#endif
 
 // ── Modo Station (original, renombrado) ──────────
 bool MqttBridge::_connectWifiSTA() {

@@ -37,8 +37,11 @@ void loop();
 /** Registra callback para procesar comandos entrantes. */
 void onCommand(CommandCallback cb);
 
-/** Publica un paquete de telemetría completo. */
+/** Publica un paquete de telemetría completo (~500 bytes). */
 void publishTelemetry(const TelemetryPacket& pkt);
+
+/** Publica telemetría compacta para modo rápido (~150 bytes). */
+void publishTelemetryFast(const TelemetryPacket& pkt);
 
 /** Publica estado del sistema. */
 void publishStatus(const char* state, FirmwareMode mode,

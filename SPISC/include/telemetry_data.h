@@ -98,6 +98,9 @@ struct TelemetryPacket {
     int   pid_sensor_type;   // 0=magnético (AS5600), 1=infrarrojo (HC-020K)
     int   pid_pwm_min;       // PWM mínimo configurado
     int   pid_pwm_max;       // PWM máximo configurado
+
+    // Meta-telemetría
+    bool  telemetry_fast;    // true cuando se publica a 20 Hz (PID activo)
 };
 
 // Helpers para convertir enums a string

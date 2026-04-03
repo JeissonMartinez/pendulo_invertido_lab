@@ -126,7 +126,7 @@ const graficos = reactive([
     max: 5000,
     series: [
       { key: 'rpm_ir', label: 'IR', color: '#E53935' },
-      { key: 'rpm_mag', label: 'Mag', color: '#FF9800' },
+      { key: 'rpm_mag', label: 'Mag', color: '#00897B' },
     ],
   },
   {
@@ -174,8 +174,8 @@ const graficos = reactive([
     min: null,
     max: null,
     series: [
-      { key: 'pid_output', label: 'Output', color: '#FF6F00' },
-      { key: 'pid_output_sat', label: 'Output Sat', color: '#E65100' },
+      { key: 'pid_output', label: 'Output', color: '#1565C0' },
+      { key: 'pid_output_sat', label: 'Output Sat', color: '#FF6D00' },
     ],
   },
   {
@@ -268,9 +268,13 @@ function crearPlot(grafico, el) {
     ],
     scales: {
       y: {
-        min: grafico.min,
-        max: grafico.max,
-        auto: grafico.min === null,
+        range: (u, dataMin, dataMax) => {
+          // Rango dinámico: usa preset como base, expande si los datos exceden
+          const pad = (dataMax - dataMin) * 0.05 || 1
+          const lo = grafico.min != null ? Math.min(grafico.min, dataMin - pad) : dataMin - pad
+          const hi = grafico.max != null ? Math.max(grafico.max, dataMax + pad) : dataMax + pad
+          return [lo, hi]
+        },
       },
     },
     series,

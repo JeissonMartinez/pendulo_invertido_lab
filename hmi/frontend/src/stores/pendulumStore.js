@@ -7,7 +7,7 @@ import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
 
 // Tamaño del ring buffer: ~60 s a 50 Hz
-const BUFFER_SIZE = 3000
+const BUFFER_SIZE = 6000
 
 export const usePendulumStore = defineStore('pendulum', () => {
   // ── Estado de conexión ───────────────────────
@@ -211,7 +211,7 @@ export const usePendulumStore = defineStore('pendulum', () => {
       pid_sensor_type: d.pid_sensor_type ?? 0,
       pid_pwm_min: d.pid_pwm_min ?? 0,
       pid_pwm_max: d.pid_pwm_max ?? 0,
-      pid_state: d.pid_state ?? '',
+      pid_state: d.ol_state ?? d.pid_state ?? '',
       // Preservar sweep embebido en telametría
       sweep: d.sweep ?? null,
     }
@@ -384,7 +384,7 @@ export const usePendulumStore = defineStore('pendulum', () => {
       pidPosResults.value.push({
         ...datos,
         ts: ahora,
-        state: estado.value.state,
+        state: datos.pid_state || pidPosState.value.status || estado.value.state,
       })
       if (pidPosResults.value.length > 10000) {
         pidPosResults.value.splice(0, pidPosResults.value.length - 10000)

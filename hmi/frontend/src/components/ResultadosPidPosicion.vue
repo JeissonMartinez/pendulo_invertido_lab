@@ -141,8 +141,8 @@ const registrosVisibles = computed(() => {
   return arr.length > max ? arr.slice(arr.length - max) : arr
 })
 
-const DIR_MAP = { 1: 'ADL', '-1': 'ATR', 0: 'DET' }
-function dirTexto(d) { return DIR_MAP[d] ?? 'DET' }
+const DIR_MAP = { 1: 'ADL', '-1': 'ATR', 0: 'DET', 'ADELANTE': 'ADL', 'ATRAS': 'ATR', 'DETENIDO': 'DET' }
+function dirTexto(d) { return DIR_MAP[d] ?? (typeof d === 'string' ? d.slice(0, 3).toUpperCase() : 'DET') }
 
 function sensorTexto(tipo) {
   return tipo === 1 ? 'IR' : 'MAG'

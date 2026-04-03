@@ -80,8 +80,9 @@
 // ══════════════════════════════════════════════════
 // Intervalos de publicación MQTT (ms)
 // ══════════════════════════════════════════════════
-#define TELEMETRY_INTERVAL_MS   200   // 5 Hz (reduce carga WiFi/backend)
-#define STATUS_INTERVAL_MS      500   // 2 Hz
+#define TELEMETRY_INTERVAL_MS       200   // 5 Hz (reduce carga WiFi/backend)
+#define TELEMETRY_FAST_INTERVAL_MS  50    // 20 Hz (durante PID activo)
+#define STATUS_INTERVAL_MS          500   // 2 Hz
 
 // ══════════════════════════════════════════════════
 // PWM defaults

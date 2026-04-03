@@ -144,6 +144,9 @@ static void buildTelemetry(TelemetryPacket& pkt) {
     pkt.pid_sensor_type = PidPosicionMode::getSensorType();
     pkt.pid_pwm_min    = PidPosicionMode::getPwmMin();
     pkt.pid_pwm_max    = PidPosicionMode::getPwmMax();
+
+    // Flag de telemetría rápida (20 Hz) cuando PID está activo
+    pkt.telemetry_fast = (activeMode == MODE_PID_POS) && PidPosicionMode::isActive();
 }
 
 // ══════════════════════════════════════════════════
@@ -351,16 +354,24 @@ void taskCommunication(void* pvParameters) {
             Safety::markMqttActivity();
         }
 
-        // 2. Publicar telemetría @ 5 Hz (cada 200ms)
-        if ((now - lastTelemetryMs) >= TELEMETRY_INTERVAL_MS) {
-            lastTelemetryMs = now;
-
+        // 2. Publicar telemetría @ 5 Hz normal / 20 Hz durante PID activo
+        {
             TelemetryPacket pkt;
             if (xSemaphoreTake(telemetryMutex, pdMS_TO_TICKS(5)) == pdTRUE) {
                 pkt = sharedTelemetry;  // Copia local
                 xSemaphoreGive(telemetryMutex);
             }
-            MqttComm::publishTelemetry(pkt);
+            uint32_t telemInterval = pkt.telemetry_fast
+                ? TELEMETRY_FAST_INTERVAL_MS
+                : TELEMETRY_INTERVAL_MS;
+            if ((now - lastTelemetryMs) >= telemInterval) {
+                lastTelemetryMs = now;
+                if (pkt.telemetry_fast) {
+                    MqttComm::publishTelemetryFast(pkt);  // JSON compacto ~150 bytes
+                } else {
+                    MqttComm::publishTelemetry(pkt);      // JSON completo ~500 bytes
+                }
+            }
         }
 
         // 3. Publicar estado @ 2 Hz (cada 500ms)
@@ -382,16 +393,20 @@ void taskCommunication(void* pvParameters) {
                 SensorsI2C::isMPUCalibrated());
         }
 
-        // 4. Actualizar OLED @ 2 Hz (puede bloquear 92ms, no afecta sensores)
+        // 4. Actualizar OLED @ 2 Hz (puede bloquear 92ms)
+        //    Desactivar durante telemetría rápida para no perder ventanas de 50ms
         if ((now - lastDisplayMs) >= 500) {
-            lastDisplayMs = now;
-
-            TelemetryPacket pkt;
+            lastDisplayMs = now;  // Siempre actualizar timestamp para evitar re-entrada cada 10ms
+            TelemetryPacket pktOled;
+            bool isFast = false;
             if (xSemaphoreTake(telemetryMutex, pdMS_TO_TICKS(5)) == pdTRUE) {
-                pkt = sharedTelemetry;
+                pktOled = sharedTelemetry;
+                isFast = pktOled.telemetry_fast;
                 xSemaphoreGive(telemetryMutex);
             }
-            DisplayOLED::update(pkt, getActiveModeStateStr());
+            if (!isFast) {
+                DisplayOLED::update(pktOled, getActiveModeStateStr());
+            }
         }
 
         // Yield para no monopolizar CPU

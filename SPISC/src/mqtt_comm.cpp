@@ -120,6 +120,30 @@ void publishTelemetry(const TelemetryPacket& p) {
     _bridge.publish(TOPIC_TELEMETRY, _jsonBuf);
 }
 
+void publishTelemetryFast(const TelemetryPacket& p) {
+    snprintf(_jsonBuf, sizeof(_jsonBuf),
+        "{"
+        "\"ts\":%lu,\"modo\":\"%s\",\"ol_state\":\"%s\","
+        "\"pulsos_ir\":%lu,\"pos_ir_cm\":%.2f,\"pos_mag_cm\":%.2f,"
+        "\"angle_pend\":%.2f,"
+        "\"pwm\":%d,\"direction\":%d,"
+        "\"pid_error\":%.3f,\"pid_output\":%.1f,\"pid_output_sat\":%.1f,"
+        "\"pid_setpoint\":%.2f,\"pid_integral\":%.3f,\"pid_derivada\":%.3f,"
+        "\"rpm_ir\":%.1f,\"rpm_mag\":%.1f,"
+        "\"ls_start\":%s,\"ls_end\":%s"
+        "}",
+        p.ts, firmwareModeToStr(p.modo), p.ol_state ? p.ol_state : "",
+        (unsigned long)p.pulsos_ir, p.pos_ir_cm, p.pos_mag_cm,
+        p.angle_pend,
+        p.pwm, (int)p.direction,
+        p.pid_error, p.pid_output, p.pid_output_sat,
+        p.pid_setpoint, p.pid_integral, p.pid_derivada,
+        p.rpm_ir, p.rpm_mag,
+        p.ls_start ? "true" : "false", p.ls_end ? "true" : "false"
+    );
+    _bridge.publish(TOPIC_TELEMETRY, _jsonBuf);
+}
+
 void publishStatus(const char* state, FirmwareMode mode,
                    bool lsStart, bool lsEnd, int wifiRssi,
                    bool calAngle, bool calPosition, bool calMPU) {

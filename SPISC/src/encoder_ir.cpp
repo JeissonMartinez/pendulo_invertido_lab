@@ -84,7 +84,7 @@ static void _updateGlobalPosition() {
         delta += PCNT_H_LIM;  // Overflow ocurrió
     }
     
-    // Aplicar dirección basada en sensor magnético (detecta mov. manuales)
+    // Aplicar dirección usando motor (primario) o sensor magnético (fallback)
     if (delta != 0) {
         int absDelta = (delta > 0) ? delta : -delta;
         
@@ -92,18 +92,24 @@ static void _updateGlobalPosition() {
             // En modo debug, acumular siempre positivo
             _globalPosition += absDelta;
         } else {
-            // Usar velocidad del sensor magnético para determinar dirección
-            float velMag = SensorsI2C::getMagVelocityCmPerSec();
-            const float VEL_THRESHOLD = 0.5f;  // cm/s umbral para considerar movimiento
-            
-            if (velMag > VEL_THRESHOLD) {
-                // Movimiento hacia adelante (posición aumenta)
+            // Primero: si el motor está activo, usar su dirección (confiable)
+            MotorDir motorDir = Motor::getDirection();
+            if (motorDir == DIR_ADELANTE) {
                 _globalPosition += absDelta;
-            } else if (velMag < -VEL_THRESHOLD) {
-                // Movimiento hacia atrás (posición disminuye)
+            } else if (motorDir == DIR_ATRAS) {
                 _globalPosition -= absDelta;
+            } else {
+                // Motor parado: fallback a sensor magnético (detecta mov. manuales)
+                float velMag = SensorsI2C::getMagVelocityCmPerSec();
+                const float VEL_THRESHOLD = 0.5f;
+                
+                if (velMag > VEL_THRESHOLD) {
+                    _globalPosition += absDelta;
+                } else if (velMag < -VEL_THRESHOLD) {
+                    _globalPosition -= absDelta;
+                }
+                // Si motor parado y |velMag| < umbral, ignorar (ruido)
             }
-            // Si |velMag| < umbral, ignorar pulsos (ruido o carro quieto)
         }
     }
     
