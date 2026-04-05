@@ -513,12 +513,14 @@ function enviar() {
 .ol-middle-row {
   flex: 0 0 auto;
   min-height: 380px;
+  min-width: 0;
 }
 
 /* ── Fila inferior: resultados ──────────────── */
 .ol-results-row {
   flex-shrink: 0;
   margin-top: auto;
+  min-width: 0;
 }
 
 /* ── Responsive ─────────────────────────────── */

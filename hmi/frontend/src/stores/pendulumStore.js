@@ -107,7 +107,7 @@ export const usePendulumStore = defineStore('pendulum', () => {
   })
 
   // ── Navegación multi-experimento ─────────────
-  const experimentoActivo = ref('rango_pwm')
+  const experimentoActivo = ref(null)
 
   // ── Estado del barrido PWM ───────────────────
   const sweepState = ref({

@@ -284,9 +284,11 @@ function crearPlot(grafico, el) {
   const data = [[], ...grafico.series.map(() => [])]
 
   plotMap[grafico.id] = new uPlot(opts, data, el)
+  observarCanvas(grafico.id, el)
 }
 
 function destruirPlot(id) {
+  desobservarCanvas(id)
   if (plotMap[id]) {
     plotMap[id].destroy()
     delete plotMap[id]
@@ -333,13 +335,49 @@ function actualizarGraficos() {
 }
 
 // ── Lifecycle ────────────────────────────────
+let resizeObserver = null
+let resizeTimer = null
+
+function manejarResize(entries) {
+  if (resizeTimer) clearTimeout(resizeTimer)
+  resizeTimer = setTimeout(() => {
+    for (const entry of entries) {
+      const el = entry.target
+      const id = el.dataset.plotId
+      if (id && plotMap[id]) {
+        const w = el.clientWidth || 600
+        plotMap[id].setSize({ width: w, height: 160 })
+      }
+    }
+  }, 150)
+}
+
+function observarCanvas(id, el) {
+  if (!resizeObserver || !el) return
+  el.dataset.plotId = id
+  resizeObserver.observe(el)
+}
+
+function desobservarCanvas(id) {
+  const el = refMap[id]
+  if (resizeObserver && el) {
+    resizeObserver.unobserve(el)
+  }
+}
+
 onMounted(() => {
+  resizeObserver = new ResizeObserver(manejarResize)
   // Timer de actualización: ~10 Hz (suficiente para gráficos)
   updateTimer = setInterval(actualizarGraficos, 100)
 })
 
 onUnmounted(() => {
   if (updateTimer) clearInterval(updateTimer)
+  if (resizeTimer) clearTimeout(resizeTimer)
+  if (resizeObserver) {
+    resizeObserver.disconnect()
+    resizeObserver = null
+  }
   for (const id of Object.keys(plotMap)) {
     destruirPlot(id)
   }
@@ -480,6 +518,7 @@ onMounted(async () => {
   display: flex;
   flex-direction: column;
   gap: 12px;
+  min-width: 0;
 }
 
 /* ── Layout Grid 2x2 ── */
@@ -487,6 +526,7 @@ onMounted(async () => {
   display: grid;
   grid-template-columns: repeat(2, 1fr);
   gap: 16px;
+  min-width: 0;
 }
 
 .layout-grid .grafico-wrapper {
@@ -498,6 +538,11 @@ onMounted(async () => {
   background: var(--md-surface, #FAFAFA);
 }
 
+.layout-grid .grafico-wrapper {
+  min-width: 0;
+  overflow: hidden;
+}
+
 .layout-grid .grafico-canvas {
   min-height: 140px;
 }
@@ -505,6 +550,8 @@ onMounted(async () => {
 .grafico-wrapper {
   border-bottom: 1px solid var(--md-outline);
   padding-bottom: 12px;
+  min-width: 0;
+  overflow: hidden;
 }
 
 .grafico-wrapper:last-child {
@@ -556,6 +603,7 @@ onMounted(async () => {
 /* ── Canvas del gráfico ─────────────────────── */
 .grafico-canvas {
   width: 100%;
+  min-width: 0;
   min-height: 160px;
   overflow: hidden;
 }

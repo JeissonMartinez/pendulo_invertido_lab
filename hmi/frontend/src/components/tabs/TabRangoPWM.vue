@@ -456,6 +456,7 @@ const claseBadgeDireccion = computed(() => {
   gap: 16px;
   min-height: 340px;
   flex-shrink: 0;
+  min-width: 0;
 }
 
 .animacion-wrapper {
@@ -474,6 +475,7 @@ const claseBadgeDireccion = computed(() => {
 /* ── Fila inferior: resultados ──────────────── */
 .sweep-results-row {
   flex-shrink: 0;
+  min-width: 0;
 }
 
 /* ── Badges ─────────────────────────────────── */

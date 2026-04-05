@@ -194,11 +194,23 @@ const barraLen = 100  // longitud visual del péndulo (px)
 
 // Pista real: 90 cm
 const PISTA_CM = 90
-const ZONA_ALERTA_CM = 10
-const SETPOINT_CM = 45.0
 
-const zonaAlertaPx = computed(() => (ZONA_ALERTA_CM / PISTA_CM) * pistaW)
-const setpointX = computed(() => pistaX + (SETPOINT_CM / PISTA_CM) * pistaW)
+const zonaAlertaCm = computed(() => {
+  if (store.experimentoActivo === 'pid_posicion') {
+    return store.pidPosState.zona_seguridad ?? 10
+  }
+  return 10
+})
+
+const setpointCm = computed(() => {
+  if (store.experimentoActivo === 'pid_posicion') {
+    return store.pidPosState.setpoint ?? 45
+  }
+  return 45
+})
+
+const zonaAlertaPx = computed(() => (zonaAlertaCm.value / PISTA_CM) * pistaW)
+const setpointX = computed(() => pistaX + (setpointCm.value / PISTA_CM) * pistaW)
 
 // ── Marcas de posición ───────────────────────
 const marcas = [0, 10, 20, 30, 45, 60, 70, 80, 90].map(cm => ({
@@ -219,7 +231,7 @@ function animLoop() {
   // Interpolar hacia el valor real (~suavizado exponencial)
   const t = 0.25  // factor de suavizado (más alto = más rápido)
   interpolAngle.value = lerp(interpolAngle.value, store.telemetria.angle, t)
-  interpolPos.value = lerp(interpolPos.value, store.telemetria.position, t)
+  interpolPos.value = lerp(interpolPos.value, store.telemetria.pos_ir_cm, t)
   animFrameId = requestAnimationFrame(animLoop)
 }
 

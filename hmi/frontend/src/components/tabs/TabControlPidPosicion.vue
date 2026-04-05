@@ -341,7 +341,10 @@
         <AnimacionPendulo />
       </div>
 
-      <!-- Indicadores + Indicadores PID -->
+    </div>
+
+    <!-- ═══════════ FILA INDICADORES (ancho completo) ═══════════ -->
+    <div class="pid-indicators-row">
       <div class="card pid-card-indicadores">
         <div class="card-header">Indicadores</div>
         <div class="card-body">
@@ -350,58 +353,63 @@
           <!-- Sección adicional: Indicadores PID -->
           <section class="seccion seccion-pid">
             <h4 class="seccion-titulo">Control PID</h4>
-            <div class="indicadores-row indicadores-3col">
-              <div class="indicador indicador-destacado">
-                <span class="indicador-label">Error</span>
-                <span class="indicador-valor-lg" :class="errorClass">{{ fmt(t.pid_error, 2) }}</span>
-                <span class="indicador-unidad">cm</span>
+            <div class="pid-indicadores-grid">
+              <div class="pid-indicadores-col">
+                <div class="indicadores-row">
+                  <div class="indicador indicador-destacado">
+                    <span class="indicador-label">Error</span>
+                    <span class="indicador-valor-lg" :class="errorClass">{{ fmt(t.pid_error, 2) }}</span>
+                    <span class="indicador-unidad">cm</span>
+                  </div>
+                  <div class="indicador indicador-destacado">
+                    <span class="indicador-label">Output</span>
+                    <span class="indicador-valor-lg">{{ fmt(t.pid_output, 0) }}</span>
+                  </div>
+                  <div class="indicador indicador-destacado">
+                    <span class="indicador-label">Output Sat</span>
+                    <span class="indicador-valor-lg">{{ fmt(t.pid_output_sat, 0) }}</span>
+                  </div>
+                </div>
               </div>
-              <div class="indicador indicador-destacado">
-                <span class="indicador-label">Output</span>
-                <span class="indicador-valor-lg">{{ fmt(t.pid_output, 0) }}</span>
-              </div>
-              <div class="indicador indicador-destacado">
-                <span class="indicador-label">Output Sat</span>
-                <span class="indicador-valor-lg">{{ fmt(t.pid_output_sat, 0) }}</span>
-              </div>
-            </div>
-            <div class="indicadores-row indicadores-4col">
-              <div class="indicador indicador-sm">
-                <span class="indicador-label">Integral</span>
-                <span class="indicador-valor-sm">{{ fmt(t.pid_integral, 1) }}</span>
-              </div>
-              <div class="indicador indicador-sm">
-                <span class="indicador-label">Derivada</span>
-                <span class="indicador-valor-sm">{{ fmt(t.pid_derivada, 2) }}</span>
-              </div>
-              <div class="indicador indicador-sm">
-                <span class="indicador-label">Setpoint</span>
-                <span class="indicador-valor-sm">{{ fmt(t.pid_setpoint, 1) }} cm</span>
-              </div>
-              <div class="indicador">
-                <span class="indicador-label">Estado</span>
-                <span class="badge" :class="claseBadgePidState">{{ pidStateText }}</span>
-              </div>
-            </div>
-            <div class="indicadores-row indicadores-3col">
-              <div class="indicador indicador-sm">
-                <span class="indicador-label">Kp</span>
-                <span class="indicador-valor-sm">{{ fmt(t.pid_kp, 2) }}</span>
-              </div>
-              <div class="indicador indicador-sm">
-                <span class="indicador-label">Ki</span>
-                <span class="indicador-valor-sm">{{ fmt(t.pid_ki, 3) }}</span>
-              </div>
-              <div class="indicador indicador-sm">
-                <span class="indicador-label">Kd</span>
-                <span class="indicador-valor-sm">{{ fmt(t.pid_kd, 3) }}</span>
+              <div class="pid-indicadores-col">
+                <div class="indicadores-row indicadores-2col">
+                  <div class="indicador indicador-sm">
+                    <span class="indicador-label">Integral</span>
+                    <span class="indicador-valor-sm">{{ fmt(t.pid_integral, 1) }}</span>
+                  </div>
+                  <div class="indicador indicador-sm">
+                    <span class="indicador-label">Derivada</span>
+                    <span class="indicador-valor-sm">{{ fmt(t.pid_derivada, 2) }}</span>
+                  </div>
+                  <div class="indicador indicador-sm">
+                    <span class="indicador-label">Setpoint</span>
+                    <span class="indicador-valor-sm">{{ fmt(t.pid_setpoint, 1) }} cm</span>
+                  </div>
+                  <div class="indicador">
+                    <span class="indicador-label">Estado</span>
+                    <span class="badge" :class="claseBadgePidState">{{ pidStateText }}</span>
+                  </div>
+                </div>
+                <div class="indicadores-row indicadores-3col">
+                  <div class="indicador indicador-sm">
+                    <span class="indicador-label">Kp</span>
+                    <span class="indicador-valor-sm">{{ fmt(t.pid_kp, 2) }}</span>
+                  </div>
+                  <div class="indicador indicador-sm">
+                    <span class="indicador-label">Ki</span>
+                    <span class="indicador-valor-sm">{{ fmt(t.pid_ki, 3) }}</span>
+                  </div>
+                  <div class="indicador indicador-sm">
+                    <span class="indicador-label">Kd</span>
+                    <span class="indicador-valor-sm">{{ fmt(t.pid_kd, 3) }}</span>
+                  </div>
+                </div>
               </div>
             </div>
           </section>
 
         </div>
       </div>
-
     </div>
 
     <!-- ═══════════ FILA CENTRAL: GRÁFICOS ═══════════ -->
@@ -551,14 +559,14 @@ function enviarConfiguracion() {
 }
 
 .pid-card-controles {
-  flex: 1 1 40%;
+  flex: 1 1 45%;
   min-width: 0;
   overflow: visible;
 }
 
 .animacion-wrapper {
-  flex: 0 0 25%;
-  min-width: 250px;
+  flex: 1 1 55%;
+  min-width: 0;
   display: flex;
   align-items: stretch;
 }
@@ -576,10 +584,32 @@ function enviarConfiguracion() {
   justify-content: center;
 }
 
+/* ── Fila de indicadores (ancho completo) ── */
+.pid-indicators-row {
+  flex-shrink: 0;
+  min-width: 0;
+}
+
 .pid-card-indicadores {
-  flex: 1 1 35%;
   min-width: 0;
   overflow: visible;
+}
+
+/* ── PID Indicadores grid 2 columnas ── */
+.pid-indicadores-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+
+.pid-indicadores-col {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.indicadores-2col {
+  grid-template-columns: repeat(2, 1fr) !important;
 }
 
 .pid-controles {
@@ -915,12 +945,14 @@ function enviarConfiguracion() {
 .pid-middle-row {
   flex: 0 0 auto;
   min-height: 380px;
+  min-width: 0;
 }
 
 /* ── Fila inferior: resultados ── */
 .pid-results-row {
   flex-shrink: 0;
   margin-top: auto;
+  min-width: 0;
 }
 
 /* ── Responsive ── */
@@ -932,10 +964,7 @@ function enviarConfiguracion() {
     flex: 1 1 100%;
   }
   .animacion-wrapper {
-    flex: 1 1 45%;
-  }
-  .pid-card-indicadores {
-    flex: 1 1 45%;
+    flex: 1 1 100%;
   }
   .params-grid,
   .control-grid {
@@ -947,9 +976,8 @@ function enviarConfiguracion() {
   .pid-top-row {
     flex-direction: column;
   }
-  .animacion-wrapper,
-  .pid-card-indicadores {
-    flex: 1 1 100%;
+  .pid-indicadores-grid {
+    grid-template-columns: 1fr;
   }
   .params-grid,
   .control-grid {

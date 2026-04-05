@@ -2,7 +2,16 @@
   <div class="app-shell">
     <!-- ═══════════ HEADER ═══════════ -->
     <header class="app-header">
-      <h1>Péndulo Invertido — HMI</h1>
+      <div class="header-izquierda">
+        <button
+          v-if="store.experimentoActivo"
+          class="btn-volver"
+          @click="store.experimentoActivo = null"
+        >
+          ← Volver
+        </button>
+        <h1>Péndulo Invertido — HMI</h1>
+      </div>
       <div class="header-derecha">
         <PanelConexion
           :latencia="latencia"
@@ -18,15 +27,13 @@
       </div>
     </header>
 
-    <!-- ═══════════ BODY: NAV + CONTENIDO ═══════════ -->
+    <!-- ═══════════ CONTENIDO ═══════════ -->
     <div class="app-body">
-      <NavSidebar />
-
-      <!-- Contenido dinámico según pestaña activa -->
       <div class="app-content">
-        <TabRangoPWM v-if="store.experimentoActivo === 'rango_pwm'" />
-        <TabLazoAbierto v-if="store.experimentoActivo === 'lazo_abierto'" />
-        <TabControlPidPosicion v-if="store.experimentoActivo === 'pid_posicion'" />
+        <PaginaInicio v-if="!store.experimentoActivo" />
+        <TabRangoPWM v-else-if="store.experimentoActivo === 'rango_pwm'" />
+        <TabLazoAbierto v-else-if="store.experimentoActivo === 'lazo_abierto'" />
+        <TabControlPidPosicion v-else-if="store.experimentoActivo === 'pid_posicion'" />
       </div>
     </div>
 
@@ -43,7 +50,7 @@ import { usePendulumStore } from './stores/pendulumStore'
 import { useWebSocket } from './composables/useWebSocket'
 
 import PanelConexion from './components/PanelConexion.vue'
-import NavSidebar from './components/NavSidebar.vue'
+import PaginaInicio from './components/PaginaInicio.vue'
 import TabRangoPWM from './components/tabs/TabRangoPWM.vue'
 import TabLazoAbierto from './components/tabs/TabLazoAbierto.vue'
 import TabControlPidPosicion from './components/tabs/TabControlPidPosicion.vue'
@@ -78,8 +85,8 @@ function onEmergencia() {
 
 .app-content {
   flex: 1;
-  overflow-y: auto;
-  overflow-x: hidden;
+  overflow: auto;
+  min-width: 0;
 }
 
 .app-footer {
@@ -96,6 +103,29 @@ function onEmergencia() {
   display: flex;
   align-items: center;
   gap: 16px;
+}
+
+.header-izquierda {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.btn-volver {
+  border: none;
+  background: rgba(255,255,255,0.15);
+  color: #FFF;
+  padding: 6px 14px;
+  border-radius: 8px;
+  font-size: 0.82rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s;
+  white-space: nowrap;
+}
+
+.btn-volver:hover {
+  background: rgba(255,255,255,0.25);
 }
 
 .btn-emergency-sent {

@@ -1,114 +1,112 @@
 <template>
   <div class="indicadores-container">
 
-    <!-- ═══════ SECCIÓN: PÉNDULO ═══════ -->
-    <section class="seccion seccion-pendulo">
-      <h4 class="seccion-titulo">Péndulo</h4>
-      <div class="indicadores-row">
-        <div class="indicador indicador-destacado">
-          <span class="indicador-label">Ángulo</span>
-          <span class="indicador-valor-lg">{{ fmt(t.angle_pend, 1) }}°</span>
-        </div>
-        <div class="indicador indicador-destacado">
-          <span class="indicador-label">Vel. Angular</span>
-          <span class="indicador-valor-lg">{{ fmt(t.vel_ang_pend, 1) }}</span>
-          <span class="indicador-unidad">°/s</span>
-        </div>
-      </div>
-    </section>
+    <!-- Todas las secciones en una sola fila -->
+    <div class="secciones-fila">
 
-    <!-- ═══════ SECCIÓN: CARRO PRINCIPAL ═══════ -->
-    <section class="seccion seccion-carro">
-      <h4 class="seccion-titulo">Carro</h4>
-      <div class="indicadores-row indicadores-4col">
-        <div class="indicador">
-          <span class="indicador-label">Pos IR</span>
-          <span class="indicador-valor">{{ fmt(t.pos_ir_cm, 1) }}</span>
-          <span class="indicador-unidad">cm</span>
-        </div>
-        <div class="indicador">
-          <span class="indicador-label">RPM IR</span>
-          <span class="indicador-valor">{{ fmt(t.rpm_ir, 0) }}</span>
-        </div>
-        <div class="indicador">
-          <span class="indicador-label">Pos Mag</span>
-          <span class="indicador-valor">{{ fmt(t.pos_mag_cm, 1) }}</span>
-          <span class="indicador-unidad">cm</span>
-        </div>
-        <div class="indicador">
-          <span class="indicador-label">RPM Mag</span>
-          <span class="indicador-valor">{{ fmt(t.rpm_mag, 0) }}</span>
-        </div>
-      </div>
-    </section>
-
-    <!-- ═══════ SECCIÓN: ACELERÓMETRO (MPU) ═══════ -->
-    <section class="seccion seccion-mpu">
-      <h4 class="seccion-titulo">Acelerómetro</h4>
-      <div class="indicadores-row indicadores-5col">
-        <div class="indicador indicador-sm">
-          <span class="indicador-label">AX</span>
-          <span class="indicador-valor-sm">{{ fmt(t.mpu_ax, 2) }}</span>
-        </div>
-        <div class="indicador indicador-sm">
-          <span class="indicador-label">AY</span>
-          <span class="indicador-valor-sm">{{ fmt(t.mpu_ay, 2) }}</span>
-        </div>
-        <div class="indicador indicador-sm">
-          <span class="indicador-label">AZ</span>
-          <span class="indicador-valor-sm">{{ fmt(t.mpu_az, 2) }}</span>
-        </div>
-        <div class="indicador indicador-sm">
-          <span class="indicador-label">Pitch</span>
-          <span class="indicador-valor-sm">{{ fmt(t.mpu_pitch, 1) }}°</span>
-        </div>
-        <div class="indicador indicador-sm">
-          <span class="indicador-label">Roll</span>
-          <span class="indicador-valor-sm">{{ fmt(t.mpu_roll, 1) }}°</span>
-        </div>
-      </div>
-    </section>
-
-    <!-- ═══════ SECCIÓN: CONTROL ═══════ -->
-    <section class="seccion seccion-control">
-      <h4 class="seccion-titulo">Control</h4>
-      <div class="indicadores-row indicadores-4col">
-        <!-- Estado del sistema -->
-        <div class="indicador">
-          <span class="indicador-label">Estado</span>
-          <span class="badge" :class="claseBadgeEstado">{{ estadoTexto }}</span>
-        </div>
-
-        <!-- PWM con barra (usa pid_output_sat si modo PID, sino pwm general) -->
-        <div class="indicador">
-          <span class="indicador-label">PWM</span>
-          <span class="indicador-valor">{{ valorPwmMostrado }}</span>
-          <div class="barra-pwm">
-            <div
-              class="barra-pwm-fill"
-              :style="{ width: (Math.abs(valorPwmMostrado) / 1023 * 100) + '%' }"
-            ></div>
+      <!-- ═══════ SECCIÓN: PÉNDULO ═══════ -->
+      <section class="seccion seccion-pendulo">
+        <h4 class="seccion-titulo">Péndulo</h4>
+        <div class="indicadores-row">
+          <div class="indicador indicador-destacado">
+            <span class="indicador-label">Ángulo</span>
+            <span class="indicador-valor-lg">{{ fmt(t.angle_pend, 1) }}°</span>
+          </div>
+          <div class="indicador indicador-destacado">
+            <span class="indicador-label">Vel. Angular</span>
+            <span class="indicador-valor-lg">{{ fmt(t.vel_ang_pend, 1) }}</span>
+            <span class="indicador-unidad">°/s</span>
           </div>
         </div>
+      </section>
 
-        <!-- Dirección -->
-        <div class="indicador">
-          <span class="indicador-label">Dirección</span>
-          <span class="badge" :class="claseBadgeDireccion">{{ textoDir }}</span>
-        </div>
-
-        <!-- Limit Switches -->
-        <div class="indicador">
-          <span class="indicador-label">Limit Switches</span>
-          <div class="ls-row">
-            <span class="ls-led" :class="t.ls_start ? 'ls-activo' : 'ls-ok'"></span>
-            <span class="ls-texto">Ini</span>
-            <span class="ls-led ls-led-right" :class="t.ls_end ? 'ls-activo' : 'ls-ok'"></span>
-            <span class="ls-texto">Fin</span>
+      <!-- ═══════ SECCIÓN: CARRO PRINCIPAL ═══════ -->
+      <section class="seccion seccion-carro">
+        <h4 class="seccion-titulo">Carro</h4>
+        <div class="indicadores-row indicadores-2col">
+          <div class="indicador">
+            <span class="indicador-label">Pos IR</span>
+            <span class="indicador-valor">{{ fmt(t.pos_ir_cm, 1) }}</span>
+            <span class="indicador-unidad">cm</span>
+          </div>
+          <div class="indicador">
+            <span class="indicador-label">RPM IR</span>
+            <span class="indicador-valor">{{ fmt(t.rpm_ir, 0) }}</span>
+          </div>
+          <div class="indicador">
+            <span class="indicador-label">Pos Mag</span>
+            <span class="indicador-valor">{{ fmt(t.pos_mag_cm, 1) }}</span>
+            <span class="indicador-unidad">cm</span>
+          </div>
+          <div class="indicador">
+            <span class="indicador-label">RPM Mag</span>
+            <span class="indicador-valor">{{ fmt(t.rpm_mag, 0) }}</span>
           </div>
         </div>
-      </div>
-    </section>
+      </section>
+
+      <!-- ═══════ SECCIÓN: ACELERÓMETRO (MPU) ═══════ -->
+      <section class="seccion seccion-mpu">
+        <h4 class="seccion-titulo">Acelerómetro</h4>
+        <div class="indicadores-row indicadores-mpu-grid">
+          <div class="indicador indicador-sm">
+            <span class="indicador-label">AX</span>
+            <span class="indicador-valor-sm">{{ fmt(t.mpu_ax, 2) }}</span>
+          </div>
+          <div class="indicador indicador-sm">
+            <span class="indicador-label">AY</span>
+            <span class="indicador-valor-sm">{{ fmt(t.mpu_ay, 2) }}</span>
+          </div>
+          <div class="indicador indicador-sm">
+            <span class="indicador-label">AZ</span>
+            <span class="indicador-valor-sm">{{ fmt(t.mpu_az, 2) }}</span>
+          </div>
+          <div class="indicador indicador-sm">
+            <span class="indicador-label">Pitch</span>
+            <span class="indicador-valor-sm">{{ fmt(t.mpu_pitch, 1) }}°</span>
+          </div>
+          <div class="indicador indicador-sm">
+            <span class="indicador-label">Roll</span>
+            <span class="indicador-valor-sm">{{ fmt(t.mpu_roll, 1) }}°</span>
+          </div>
+        </div>
+      </section>
+
+      <!-- ═══════ SECCIÓN: CONTROL ═══════ -->
+      <section class="seccion seccion-control">
+        <h4 class="seccion-titulo">Control</h4>
+        <div class="indicadores-row indicadores-2col">
+          <div class="indicador">
+            <span class="indicador-label">Estado</span>
+            <span class="badge" :class="claseBadgeEstado">{{ estadoTexto }}</span>
+          </div>
+          <div class="indicador">
+            <span class="indicador-label">PWM</span>
+            <span class="indicador-valor">{{ valorPwmMostrado }}</span>
+            <div class="barra-pwm">
+              <div
+                class="barra-pwm-fill"
+                :style="{ width: (Math.abs(valorPwmMostrado) / 1023 * 100) + '%' }"
+              ></div>
+            </div>
+          </div>
+          <div class="indicador">
+            <span class="indicador-label">Dirección</span>
+            <span class="badge" :class="claseBadgeDireccion">{{ textoDir }}</span>
+          </div>
+          <div class="indicador">
+            <span class="indicador-label">Limit Switches</span>
+            <div class="ls-row">
+              <span class="ls-led" :class="t.ls_start ? 'ls-activo' : 'ls-ok'"></span>
+              <span class="ls-texto">Ini</span>
+              <span class="ls-led ls-led-right" :class="t.ls_end ? 'ls-activo' : 'ls-ok'"></span>
+              <span class="ls-texto">Fin</span>
+            </div>
+          </div>
+        </div>
+      </section>
+
+    </div>
 
   </div>
 </template>
@@ -187,21 +185,29 @@ const claseBadgeDireccion = computed(() => {
   gap: 12px;
 }
 
+/* ── 4 secciones en una sola fila ── */
+.secciones-fila {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 12px;
+}
+
 /* ── Secciones ── */
 .seccion {
   display: flex;
   flex-direction: column;
   gap: 6px;
+  min-width: 0;
 }
 
 .seccion-titulo {
   margin: 0;
-  font-size: 0.7rem;
+  font-size: 0.65rem;
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.08em;
   color: var(--md-on-surface-secondary, #6E5F72);
-  padding-bottom: 4px;
+  padding-bottom: 3px;
   border-bottom: 1px solid var(--md-outline-variant, #E0E0E0);
 }
 
@@ -218,6 +224,10 @@ const claseBadgeDireccion = computed(() => {
   gap: 8px;
 }
 
+.indicadores-2col {
+  grid-template-columns: repeat(2, 1fr);
+}
+
 .indicadores-4col {
   grid-template-columns: repeat(4, 1fr);
 }
@@ -226,68 +236,91 @@ const claseBadgeDireccion = computed(() => {
   grid-template-columns: repeat(5, 1fr);
 }
 
-@media (max-width: 600px) {
-  .indicadores-4col,
-  .indicadores-5col {
-    grid-template-columns: repeat(2, 1fr);
-  }
+.indicadores-mpu-grid {
+  grid-template-columns: repeat(3, 1fr);
 }
 
 /* ── Indicadores base ── */
 .indicador {
-  padding: 8px 10px;
+  padding: 6px 8px;
   background: var(--md-surface-dim, #F5F5F5);
-  border-radius: 8px;
+  border-radius: 6px;
   display: flex;
   flex-direction: column;
   gap: 2px;
   min-width: 0;
+  overflow: hidden;
 }
 
 .indicador-destacado {
   background: linear-gradient(135deg, #F3E8F9 0%, #FCE4EC 100%);
   text-align: center;
-  padding: 10px 12px;
+  padding: 8px 10px;
 }
 
 .indicador-sm {
-  padding: 6px 8px;
+  padding: 5px 7px;
 }
 
 .indicador-label {
-  font-size: 0.65rem;
+  font-size: 0.6rem;
   color: var(--md-on-surface-secondary, #757575);
   text-transform: uppercase;
   letter-spacing: 0.04em;
   font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .indicador-valor-lg {
-  font-size: 1.5rem;
+  font-size: 1.2rem;
   font-weight: 700;
   color: #8C2981;
   font-family: 'JetBrains Mono', 'Fira Code', monospace;
   line-height: 1.1;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .indicador-valor {
-  font-size: 1rem;
+  font-size: 0.9rem;
   font-weight: 700;
   color: var(--md-primary, #1565C0);
   font-family: 'JetBrains Mono', 'Fira Code', monospace;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .indicador-valor-sm {
-  font-size: 0.85rem;
+  font-size: 0.8rem;
   font-weight: 600;
   color: var(--md-on-surface, #333);
   font-family: 'JetBrains Mono', 'Fira Code', monospace;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .indicador-unidad {
-  font-size: 0.6rem;
+  font-size: 0.55rem;
   color: var(--md-on-surface-secondary, #9E9E9E);
   margin-top: -2px;
+}
+
+/* ── Responsive ── */
+@media (max-width: 1100px) {
+  .secciones-fila {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+@media (max-width: 600px) {
+  .secciones-fila {
+    grid-template-columns: 1fr;
+  }
+  .indicadores-mpu-grid {
+    grid-template-columns: repeat(3, 1fr);
+  }
 }
 
 /* ── Barra PWM ── */
