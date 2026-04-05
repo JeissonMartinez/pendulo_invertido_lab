@@ -61,6 +61,21 @@ export const usePendulumStore = defineStore('pendulum', () => {
     pid_pwm_min: 0,
     pid_pwm_max: 0,
     pid_state: '',
+    // PID Ángulo
+    pida_error: 0,
+    pida_integral: 0,
+    pida_derivada: 0,
+    pida_output: 0,
+    pida_output_sat: 0,
+    pida_setpoint: 0,
+    pida_kp: 0,
+    pida_ki: 0,
+    pida_kd: 0,
+    pida_rango_trabajo: 0,
+    pida_tolerancia: 0,
+    pida_pwm_min: 0,
+    pida_pwm_max: 0,
+    pida_pos_setpoint: 0,
   })
 
   // ── Estado del sistema ───────────────────────
@@ -104,6 +119,15 @@ export const usePendulumStore = defineStore('pendulum', () => {
     pid_output: [],
     pid_output_sat: [],
     pid_setpoint: [],
+    // PID Ángulo
+    pida_error: [],
+    pida_integral: [],
+    pida_derivada: [],
+    pida_output: [],
+    pida_output_sat: [],
+    // PID Posición interno (dentro de PID Ángulo)
+    pida_pos_error: [],
+    pida_pos_output: [],
   })
 
   // ── Navegación multi-experimento ─────────────
@@ -142,6 +166,19 @@ export const usePendulumStore = defineStore('pendulum', () => {
     pwm_max: 700,
   })
   const pidPosResults = ref([])
+
+  // ── Estado PID Ángulo ────────────────────────
+  const pidAngState = ref({
+    status: 'PIDA_IDLE',
+    kp: 2.0,
+    ki: 0.05,
+    kd: 0.3,
+    rango_trabajo: 10.0,
+    tolerancia: 2.0,
+    pwm_min: 200,
+    pwm_max: 700,
+  })
+  const pidAngResults = ref([])
 
   // ── WebSocket send callback ──────────────────
   let _wsSend = null
@@ -212,6 +249,26 @@ export const usePendulumStore = defineStore('pendulum', () => {
       pid_pwm_min: d.pid_pwm_min ?? 0,
       pid_pwm_max: d.pid_pwm_max ?? 0,
       pid_state: d.ol_state ?? d.pid_state ?? '',
+      // PID Ángulo
+      pida_error: d.pida_error ?? 0,
+      pida_integral: d.pida_integral ?? 0,
+      pida_derivada: d.pida_derivada ?? 0,
+      pida_output: d.pida_output ?? 0,
+      pida_output_sat: d.pida_output_sat ?? 0,
+      pida_setpoint: d.pida_setpoint ?? 0,
+      pida_kp: d.pida_kp ?? 0,
+      pida_ki: d.pida_ki ?? 0,
+      pida_kd: d.pida_kd ?? 0,
+      pida_rango_trabajo: d.pida_rango_trabajo ?? 0,
+      pida_tolerancia: d.pida_tolerancia ?? 0,
+      pida_pwm_min: d.pida_pwm_min ?? 0,
+      pida_pwm_max: d.pida_pwm_max ?? 0,
+      pida_pos_setpoint: d.pida_pos_setpoint ?? 0,
+      // PID Posición interno
+      pida_pos_error: d.pida_pos_error ?? 0,
+      pida_pos_integral: d.pida_pos_integral ?? 0,
+      pida_pos_derivada: d.pida_pos_derivada ?? 0,
+      pida_pos_output: d.pida_pos_output ?? 0,
       // Preservar sweep embebido en telametría
       sweep: d.sweep ?? null,
     }
@@ -260,6 +317,18 @@ export const usePendulumStore = defineStore('pendulum', () => {
         if (norm.pid_pwm_min > 0) pidPosState.value.pwm_min = norm.pid_pwm_min
         if (norm.pid_pwm_max > 0) pidPosState.value.pwm_max = norm.pid_pwm_max
       }
+      // Actualizar pidAngState desde telemetría cuando modo es PID_ANG
+      if (norm.modo === 'PID_ANG' || datos.modo === 'PID_ANG') {
+        const pidaSt = datos.ol_state ?? datos.pid_state ?? norm.pid_state ?? 'PIDA_IDLE'
+        pidAngState.value.status = pidaSt
+        if (norm.pida_kp > 0) pidAngState.value.kp = norm.pida_kp
+        if (norm.pida_ki >= 0) pidAngState.value.ki = norm.pida_ki
+        if (norm.pida_kd >= 0) pidAngState.value.kd = norm.pida_kd
+        if (norm.pida_rango_trabajo > 0) pidAngState.value.rango_trabajo = norm.pida_rango_trabajo
+        if (norm.pida_tolerancia > 0) pidAngState.value.tolerancia = norm.pida_tolerancia
+        if (norm.pida_pwm_min > 0) pidAngState.value.pwm_min = norm.pida_pwm_min
+        if (norm.pida_pwm_max > 0) pidAngState.value.pwm_max = norm.pida_pwm_max
+      }
       // Extraer sweep state desde telemetría si viene
       if (datos.sweep) {
         sweepState.value = {
@@ -287,6 +356,11 @@ export const usePendulumStore = defineStore('pendulum', () => {
       if (datos.modo === 'PID_POS' || datos.mode === 'PID_POS') {
         const st = datos.estado ?? datos.state ?? 'PID_IDLE'
         pidPosState.value.status = st
+      }
+      // Actualizar pidAngState si estamos en modo PID_ANG
+      if (datos.modo === 'PID_ANG' || datos.mode === 'PID_ANG') {
+        const st = datos.estado ?? datos.state ?? 'PIDA_IDLE'
+        pidAngState.value.status = st
       }
     } else if (tipo === 'limites') {
       // Normalizar nombres de limit switches
@@ -357,6 +431,15 @@ export const usePendulumStore = defineStore('pendulum', () => {
     h.pid_output.push(datos.pid_output ?? 0)
     h.pid_output_sat.push(datos.pid_output_sat ?? 0)
     h.pid_setpoint.push(datos.pid_setpoint ?? 0)
+    // PID Ángulo
+    h.pida_error.push(datos.pida_error ?? 0)
+    h.pida_integral.push(datos.pida_integral ?? 0)
+    h.pida_derivada.push(datos.pida_derivada ?? 0)
+    h.pida_output.push(datos.pida_output ?? 0)
+    h.pida_output_sat.push(datos.pida_output_sat ?? 0)
+    // PID Posición interno
+    h.pida_pos_error.push(datos.pida_pos_error ?? 0)
+    h.pida_pos_output.push(datos.pida_pos_output ?? 0)
 
     // Recortar al tamaño máximo
     if (h.ts.length > BUFFER_SIZE) {
@@ -388,6 +471,18 @@ export const usePendulumStore = defineStore('pendulum', () => {
       })
       if (pidPosResults.value.length > 10000) {
         pidPosResults.value.splice(0, pidPosResults.value.length - 10000)
+      }
+    }
+
+    // Si está en modo PID_ANG, agregar a resultados PID ángulo
+    if (datos.modo === 'PID_ANG' || experimentoActivo.value === 'pid_angulo') {
+      pidAngResults.value.push({
+        ...datos,
+        ts: ahora,
+        state: datos.pid_state || pidAngState.value.status || estado.value.state,
+      })
+      if (pidAngResults.value.length > 10000) {
+        pidAngResults.value.splice(0, pidAngResults.value.length - 10000)
       }
     }
   }
@@ -494,6 +589,41 @@ export const usePendulumStore = defineStore('pendulum', () => {
     pidPosResults.value = []
   }
 
+  // ── Acciones PID Ángulo ──────────────────────
+  function enviarComandoPidAng(action, params = {}) {
+    const datos = { action, ...params }
+    enviarComando('cmd_pidang', datos)
+  }
+
+  function homePidAng() {
+    enviarComandoPidAng('home')
+  }
+
+  function endPidAng() {
+    enviarComandoPidAng('end')
+  }
+
+  function configurarPidAng(config) {
+    Object.assign(pidAngState.value, config)
+    enviarComandoPidAng('config', config)
+  }
+
+  function ejecutarPidAng() {
+    enviarComandoPidAng('run')
+  }
+
+  function detenerPidAng() {
+    enviarComandoPidAng('stop')
+  }
+
+  function resetPidAng() {
+    enviarComandoPidAng('reset')
+  }
+
+  function limpiarResultadosPidAng() {
+    pidAngResults.value = []
+  }
+
   // ── Computed ─────────────────────────────────
   const estadoTexto = computed(() => estado.value.state)
   const modoTexto = computed(() => estado.value.mode)
@@ -519,6 +649,9 @@ export const usePendulumStore = defineStore('pendulum', () => {
     // PID Posición
     pidPosState,
     pidPosResults,
+    // PID Ángulo
+    pidAngState,
+    pidAngResults,
     // Computed
     estadoTexto,
     modoTexto,
@@ -550,5 +683,14 @@ export const usePendulumStore = defineStore('pendulum', () => {
     detenerPidPos,
     resetPidPos,
     limpiarResultadosPidPos,
+    // PID Ángulo actions
+    enviarComandoPidAng,
+    homePidAng,
+    endPidAng,
+    configurarPidAng,
+    ejecutarPidAng,
+    detenerPidAng,
+    resetPidAng,
+    limpiarResultadosPidAng,
   }
 })

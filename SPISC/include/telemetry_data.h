@@ -32,6 +32,7 @@ enum FirmwareMode {
     MODE_MANUAL,
     MODE_PID,
     MODE_PID_POS,
+    MODE_PID_ANG,
     MODE_NEURAL,
     MODE_SMC,
     MODE_LQR,
@@ -99,6 +100,28 @@ struct TelemetryPacket {
     int   pid_pwm_min;       // PWM mínimo configurado
     int   pid_pwm_max;       // PWM máximo configurado
 
+    // Control PID Ángulo
+    float pida_error;         // Error angular (grados, normalizado ±180)
+    float pida_integral;      // Término integral acumulado
+    float pida_derivada;      // Término derivativo (filtrado)
+    float pida_output;        // Salida PID cruda (antes de saturación)
+    float pida_output_sat;    // Salida PID saturada (PWM aplicado)
+    float pida_setpoint;      // Setpoint angular (0°=vertical)
+    float pida_kp;            // Constante proporcional
+    float pida_ki;            // Constante integral
+    float pida_kd;            // Constante derivativa
+    float pida_rango_trabajo; // Rango de trabajo (grados)
+    float pida_tolerancia;    // Tolerancia angular (grados)
+    int   pida_pwm_min;       // PWM mínimo configurado
+    int   pida_pwm_max;       // PWM máximo configurado
+    float pida_pos_setpoint;  // Setpoint posición para pre-posicionamiento (cm)
+
+    // PID Posición interno (dentro de PID Ángulo)
+    float pida_pos_error;     // Error de posición interno (cm)
+    float pida_pos_integral;  // Integral de posición interno
+    float pida_pos_derivada;  // Derivada de posición interno (filtrada)
+    float pida_pos_output;    // Salida PID de posición interno
+
     // Meta-telemetría
     bool  telemetry_fast;    // true cuando se publica a 20 Hz (PID activo)
 };
@@ -119,6 +142,7 @@ inline const char* firmwareModeToStr(FirmwareMode m) {
         case MODE_MANUAL:     return "MANUAL";
         case MODE_PID:        return "PID";
         case MODE_PID_POS:    return "PID_POS";
+        case MODE_PID_ANG:    return "PID_ANG";
         case MODE_NEURAL:     return "NEURAL";
         case MODE_SMC:        return "SMC";
         case MODE_LQR:        return "LQR";
@@ -135,6 +159,7 @@ inline FirmwareMode strToFirmwareMode(const char* s) {
     if (strcmp(s, "MANUAL")     == 0) return MODE_MANUAL;
     if (strcmp(s, "PID")        == 0) return MODE_PID;
     if (strcmp(s, "PID_POS")    == 0) return MODE_PID_POS;
+    if (strcmp(s, "PID_ANG")    == 0) return MODE_PID_ANG;
     if (strcmp(s, "NEURAL")     == 0) return MODE_NEURAL;
     if (strcmp(s, "SMC")        == 0) return MODE_SMC;
     if (strcmp(s, "LQR")        == 0) return MODE_LQR;

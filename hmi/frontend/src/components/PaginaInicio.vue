@@ -57,6 +57,12 @@ const experimentos = [
     titulo: 'Control PID Posición',
     desc: 'Control en lazo cerrado con sintonización PID en tiempo real para posicionamiento del carro.',
   },
+  {
+    id: 'pid_angulo',
+    icon: '⚖',
+    titulo: 'Control PID Ángulo',
+    desc: 'Estabilización angular del péndulo invertido con PID en tiempo real. Setpoint: 0° (vertical).',
+  },
 ]
 </script>
 

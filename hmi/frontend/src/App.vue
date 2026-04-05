@@ -34,6 +34,7 @@
         <TabRangoPWM v-else-if="store.experimentoActivo === 'rango_pwm'" />
         <TabLazoAbierto v-else-if="store.experimentoActivo === 'lazo_abierto'" />
         <TabControlPidPosicion v-else-if="store.experimentoActivo === 'pid_posicion'" />
+        <TabControlPidAngulo v-else-if="store.experimentoActivo === 'pid_angulo'" />
       </div>
     </div>
 
@@ -54,6 +55,7 @@ import PaginaInicio from './components/PaginaInicio.vue'
 import TabRangoPWM from './components/tabs/TabRangoPWM.vue'
 import TabLazoAbierto from './components/tabs/TabLazoAbierto.vue'
 import TabControlPidPosicion from './components/tabs/TabControlPidPosicion.vue'
+import TabControlPidAngulo from './components/tabs/TabControlPidAngulo.vue'
 
 const store = usePendulumStore()
 const { latencia, reconectarManual } = useWebSocket()

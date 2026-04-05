@@ -26,6 +26,7 @@ TOPICO_CMD_STOP = "pendulum/cmd/stop"
 TOPICO_CMD_SWEEP = "pendulum/cmd/sweep"
 TOPICO_CMD_OPENLOOP = "pendulum/cmd/openloop"
 TOPICO_CMD_PID_POS = "pendulum/cmd/pidpos"
+TOPICO_CMD_PID_ANG = "pendulum/cmd/pidang"
 TOPICO_TIME_SYNC = "pendulum/time"  # Sincronización de reloj ESP32
 
 # Resultados de barrido PWM

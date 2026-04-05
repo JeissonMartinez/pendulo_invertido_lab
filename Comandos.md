@@ -30,6 +30,10 @@ cd /Users/admin/Documents/Proyectos/pendulo_invertido/SPISC
 // Flashear (subir a la ESP32)
 ~/.platformio/penv/bin/pio run -e esp32dev -t upload
 ``` 
+# 5. Identificar cuál es el puerto serial de la ESP32
+```zsh
+~/.platformio/penv/bin/pio device list
+```
 
 # 5. Monitor ESP32
 ```zsh

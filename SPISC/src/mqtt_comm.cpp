@@ -15,7 +15,7 @@
 namespace MqttComm {
 
 static MqttBridge _bridge;
-static char _jsonBuf[768];   // Buffer para JSON (ampliado para telemetría extendida)
+static char _jsonBuf[1280];  // Buffer para JSON (ampliado para telemetría extendida + PID ángulo)
 
 // ══════════════════════════════════════════════════
 // Cola de comandos thread-safe
@@ -57,6 +57,7 @@ bool begin() {
         _bridge.subscribe(TOPIC_CMD_SWEEP);
         _bridge.subscribe(TOPIC_CMD_OPENLOOP);
         _bridge.subscribe(TOPIC_CMD_PID_POS);
+        _bridge.subscribe(TOPIC_CMD_PID_ANG);
         _bridge.subscribe(TOPIC_CMD_DEBUG);
         _bridge.subscribe(TOPIC_TIME_SYNC);  // Sincronización de tiempo
         
@@ -94,6 +95,14 @@ void publishTelemetry(const TelemetryPacket& p) {
         "\"pid_setpoint\":%.2f,\"pid_kp\":%.2f,\"pid_ki\":%.3f,\"pid_kd\":%.3f,"
         "\"pid_zona_seg\":%.1f,\"pid_tolerancia\":%.2f,"
         "\"pid_sensor_type\":%d,\"pid_pwm_min\":%d,\"pid_pwm_max\":%d,"
+        // Control PID Ángulo
+        "\"pida_error\":%.3f,\"pida_integral\":%.3f,\"pida_derivada\":%.3f,"
+        "\"pida_output\":%.1f,\"pida_output_sat\":%.1f,"
+        "\"pida_setpoint\":%.2f,\"pida_kp\":%.2f,\"pida_ki\":%.3f,\"pida_kd\":%.3f,"
+        "\"pida_rango_trabajo\":%.1f,\"pida_tolerancia\":%.1f,"
+        "\"pida_pwm_min\":%d,\"pida_pwm_max\":%d,\"pida_pos_setpoint\":%.2f,"
+        "\"pida_pos_error\":%.3f,\"pida_pos_integral\":%.3f,"
+        "\"pida_pos_derivada\":%.3f,\"pida_pos_output\":%.1f,"
         // Mantener campos de compatibilidad con frontend actual
         "\"angle\":%.2f,\"position\":%.2f,\"cart_accel\":%.3f,\"rpm\":%.1f,"
         "\"posicion\":%.2f,\"direccion\":%d"
@@ -113,6 +122,14 @@ void publishTelemetry(const TelemetryPacket& p) {
         p.pid_setpoint, p.pid_kp, p.pid_ki, p.pid_kd,
         p.pid_zona_seg, p.pid_tolerancia,
         p.pid_sensor_type, p.pid_pwm_min, p.pid_pwm_max,
+        // PID Ángulo
+        p.pida_error, p.pida_integral, p.pida_derivada,
+        p.pida_output, p.pida_output_sat,
+        p.pida_setpoint, p.pida_kp, p.pida_ki, p.pida_kd,
+        p.pida_rango_trabajo, p.pida_tolerancia,
+        p.pida_pwm_min, p.pida_pwm_max, p.pida_pos_setpoint,
+        p.pida_pos_error, p.pida_pos_integral,
+        p.pida_pos_derivada, p.pida_pos_output,
         // Compatibilidad: angle=angle_pend, position=pos_mag_cm, cart_accel=mpu_ax, rpm=rpm_ir
         p.angle_pend, p.pos_mag_cm, p.mpu_ax, p.rpm_ir,
         p.pos_mag_cm, (int)p.direction
@@ -130,7 +147,14 @@ void publishTelemetryFast(const TelemetryPacket& p) {
         "\"pid_error\":%.3f,\"pid_output\":%.1f,\"pid_output_sat\":%.1f,"
         "\"pid_setpoint\":%.2f,\"pid_integral\":%.3f,\"pid_derivada\":%.3f,"
         "\"rpm_ir\":%.1f,\"rpm_mag\":%.1f,"
-        "\"ls_start\":%s,\"ls_end\":%s"
+        "\"ls_start\":%s,\"ls_end\":%s,"
+        "\"pida_error\":%.3f,\"pida_output\":%.1f,\"pida_output_sat\":%.1f,"
+        "\"pida_setpoint\":%.2f,\"pida_integral\":%.3f,\"pida_derivada\":%.3f,"
+        "\"pida_kp\":%.2f,\"pida_ki\":%.3f,\"pida_kd\":%.3f,"
+        "\"pida_rango_trabajo\":%.1f,\"pida_tolerancia\":%.1f,"
+        "\"pida_pwm_min\":%d,\"pida_pwm_max\":%d,\"pida_pos_setpoint\":%.2f,"
+        "\"pida_pos_error\":%.3f,\"pida_pos_integral\":%.3f,"
+        "\"pida_pos_derivada\":%.3f,\"pida_pos_output\":%.1f"
         "}",
         p.ts, firmwareModeToStr(p.modo), p.ol_state ? p.ol_state : "",
         (unsigned long)p.pulsos_ir, p.pos_ir_cm, p.pos_mag_cm,
@@ -139,7 +163,14 @@ void publishTelemetryFast(const TelemetryPacket& p) {
         p.pid_error, p.pid_output, p.pid_output_sat,
         p.pid_setpoint, p.pid_integral, p.pid_derivada,
         p.rpm_ir, p.rpm_mag,
-        p.ls_start ? "true" : "false", p.ls_end ? "true" : "false"
+        p.ls_start ? "true" : "false", p.ls_end ? "true" : "false",
+        p.pida_error, p.pida_output, p.pida_output_sat,
+        p.pida_setpoint, p.pida_integral, p.pida_derivada,
+        p.pida_kp, p.pida_ki, p.pida_kd,
+        p.pida_rango_trabajo, p.pida_tolerancia,
+        p.pida_pwm_min, p.pida_pwm_max, p.pida_pos_setpoint,
+        p.pida_pos_error, p.pida_pos_integral,
+        p.pida_pos_derivada, p.pida_pos_output
     );
     _bridge.publish(TOPIC_TELEMETRY, _jsonBuf);
 }

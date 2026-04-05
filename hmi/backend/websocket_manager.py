@@ -103,6 +103,7 @@ class GestorWebSocket:
             "cmd_sweep": config.TOPICO_CMD_SWEEP,
             "cmd_openloop": config.TOPICO_CMD_OPENLOOP,
             "cmd_pidpos": config.TOPICO_CMD_PID_POS,
+            "cmd_pidang": config.TOPICO_CMD_PID_ANG,
         }
 
         topico = mapa_topicos.get(tipo)

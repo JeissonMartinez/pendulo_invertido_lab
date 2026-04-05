@@ -39,6 +39,23 @@ class EstadoSistema(str, Enum):
     SETTLE_END = "SETTLE_END"
     SETTLE_START = "SETTLE_START"
     PAUSE_AT_START = "PAUSE_AT_START"
+    # Estados del modo PID Posición
+    PID_IDLE = "PID_IDLE"
+    PID_HOMING_START = "PID_HOMING_START"
+    PID_HOMING_END = "PID_HOMING_END"
+    PID_CALIBRATING = "PID_CALIBRATING"
+    PID_RUNNING = "PID_RUNNING"
+    PID_STOPPED = "PID_STOPPED"
+    # Estados del modo PID Ángulo
+    PIDA_IDLE = "PIDA_IDLE"
+    PIDA_HOMING_START = "PIDA_HOMING_START"
+    PIDA_HOMING_END = "PIDA_HOMING_END"
+    PIDA_CALIBRATING = "PIDA_CALIBRATING"
+    PIDA_PREPOSITIONING = "PIDA_PREPOSITIONING"
+    PIDA_READY = "PIDA_READY"
+    PIDA_RUNNING = "PIDA_RUNNING"
+    PIDA_REPOSITIONING = "PIDA_REPOSITIONING"
+    PIDA_STOPPED = "PIDA_STOPPED"
 
 
 class ModoControl(str, Enum):
@@ -52,6 +69,8 @@ class ModoControl(str, Enum):
     MPC = "MPC"
     SWEEP_PWM = "SWEEP_PWM"
     OPEN_LOOP = "OPEN_LOOP"
+    PID_POS = "PID_POS"
+    PID_ANG = "PID_ANG"
 
 
 class DireccionMotor(str, Enum):
@@ -136,6 +155,28 @@ class Telemetria(BaseModel):
     pid_pwm_max: int = Field(0, description="PWM máximo configurado")
     pid_state: str = Field("", description="Estado del modo PID: IDLE, RUNNING, etc.")
 
+    # ── PID Ángulo ────────────────────────────────
+    pida_error: float = Field(0.0, description="Error angular (setpoint - actual)")
+    pida_integral: float = Field(0.0, description="Término integral acumulado")
+    pida_derivada: float = Field(0.0, description="Término derivativo filtrado")
+    pida_output: float = Field(0.0, description="Salida PID antes de saturación")
+    pida_output_sat: float = Field(0.0, description="Salida PID saturada")
+    pida_setpoint: float = Field(0.0, description="Setpoint angular (grados)")
+    pida_kp: float = Field(0.0, description="Ganancia proporcional ángulo")
+    pida_ki: float = Field(0.0, description="Ganancia integral ángulo")
+    pida_kd: float = Field(0.0, description="Ganancia derivativa ángulo")
+    pida_rango_trabajo: float = Field(0.0, description="Rango de trabajo (grados)")
+    pida_tolerancia: float = Field(0.0, description="Tolerancia angular (grados)")
+    pida_pwm_min: int = Field(0, description="PWM mínimo ángulo")
+    pida_pwm_max: int = Field(0, description="PWM máximo ángulo")
+    pida_pos_setpoint: float = Field(0.0, description="Setpoint posición interna (cm)")
+
+    # ── PID Posición interno (dentro de PID Ángulo) ───
+    pida_pos_error: float = Field(0.0, description="Error de posición interno (cm)")
+    pida_pos_integral: float = Field(0.0, description="Integral de posición interno")
+    pida_pos_derivada: float = Field(0.0, description="Derivada de posición interno")
+    pida_pos_output: float = Field(0.0, description="Salida PID posición interno")
+
 
 class EstadoLimites(BaseModel):
     """Estado de limit switches."""
@@ -214,6 +255,18 @@ class ComandoPidPos(BaseModel):
     zona_seguridad: float | None = Field(None, ge=2.0, le=20.0, description="Zona segura desde límites (cm)")
     tolerancia: float | None = Field(None, ge=0.5, le=5.0, description="Tolerancia para llegada (cm)")
     sensor: str | None = Field(None, description="Sensor de posición: 'mag' o 'ir'")
+    pwm_min: int | None = Field(None, ge=100, le=500, description="PWM mínimo")
+    pwm_max: int | None = Field(None, ge=300, le=1023, description="PWM máximo")
+
+
+class ComandoPidAng(BaseModel):
+    """Comando para el modo PID de Ángulo."""
+    action: str = Field(..., description="'home', 'end', 'config', 'run', 'stop', 'reset'")
+    kp: float | None = Field(None, ge=0.1, le=50.0, description="Ganancia proporcional")
+    ki: float | None = Field(None, ge=0.0, le=10.0, description="Ganancia integral")
+    kd: float | None = Field(None, ge=0.0, le=5.0, description="Ganancia derivativa")
+    rango_trabajo: float | None = Field(None, ge=5.0, le=30.0, description="Rango de trabajo (grados)")
+    tolerancia: float | None = Field(None, ge=1.0, le=10.0, description="Tolerancia angular (grados)")
     pwm_min: int | None = Field(None, ge=100, le=500, description="PWM mínimo")
     pwm_max: int | None = Field(None, ge=300, le=1023, description="PWM máximo")
 

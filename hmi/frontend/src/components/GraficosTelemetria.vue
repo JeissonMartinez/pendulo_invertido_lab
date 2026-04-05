@@ -211,6 +211,42 @@ const graficos = reactive([
       { key: 'pid_derivada', label: 'Derivada', color: '#1976D2' },
     ],
   },
+  // ── Gráficos PID Ángulo ──────────────────────
+  {
+    id: 'pida_output',
+    label: 'Salida PID Áng',
+    unit: '',
+    visible: props.graficosDefault ? props.graficosDefault.includes('pida_output') : false,
+    min: null,
+    max: null,
+    series: [
+      { key: 'pida_output', label: 'Output', color: '#0D47A1' },
+      { key: 'pida_output_sat', label: 'Output Sat', color: '#FF6F00' },
+    ],
+  },
+  {
+    id: 'pida_error',
+    label: 'Error PID Áng',
+    unit: '°',
+    visible: props.graficosDefault ? props.graficosDefault.includes('pida_error') : false,
+    min: null,
+    max: null,
+    series: [
+      { key: 'pida_error', label: 'Error', color: '#B71C1C' },
+    ],
+  },
+  {
+    id: 'pida_pos_output',
+    label: 'Salida PID Pos Int.',
+    unit: '',
+    visible: props.graficosDefault ? props.graficosDefault.includes('pida_pos_output') : false,
+    min: null,
+    max: null,
+    series: [
+      { key: 'pida_pos_output', label: 'Output', color: '#1B5E20' },
+      { key: 'pida_pos_error', label: 'Error', color: '#E65100' },
+    ],
+  },
 ])
 
 const graficosVisibles = computed(() => graficos.filter(g => g.visible))
