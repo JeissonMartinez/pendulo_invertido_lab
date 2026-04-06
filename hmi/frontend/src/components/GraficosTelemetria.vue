@@ -247,6 +247,55 @@ const graficos = reactive([
       { key: 'pida_pos_error', label: 'Error', color: '#E65100' },
     ],
   },
+  // ── Gráficos PID Cascada ─────────────────────
+  {
+    id: 'pidc_pos_output',
+    label: 'Casc: Salida Pos (θ_ref)',
+    unit: '°',
+    visible: props.graficosDefault ? props.graficosDefault.includes('pidc_pos_output') : false,
+    min: null,
+    max: null,
+    series: [
+      { key: 'pidc_pos_output', label: 'Output', color: '#00695C' },
+      { key: 'pidc_pos_output_sat', label: 'θ_ref sat', color: '#E65100' },
+      { key: 'pidc_pos_setpoint', label: 'Setpoint', color: '#E91E63' },
+    ],
+  },
+  {
+    id: 'pidc_pos_error',
+    label: 'Casc: Error Posición',
+    unit: 'cm',
+    visible: props.graficosDefault ? props.graficosDefault.includes('pidc_pos_error') : false,
+    min: null,
+    max: null,
+    series: [
+      { key: 'pidc_pos_error', label: 'Error', color: '#BF360C' },
+    ],
+  },
+  {
+    id: 'pidc_ang_output',
+    label: 'Casc: Salida Ángulo',
+    unit: '',
+    visible: props.graficosDefault ? props.graficosDefault.includes('pidc_ang_output') : false,
+    min: null,
+    max: null,
+    series: [
+      { key: 'pidc_ang_output', label: 'Output', color: '#283593' },
+      { key: 'pidc_ang_output_sat', label: 'Output Sat', color: '#FF6F00' },
+    ],
+  },
+  {
+    id: 'pidc_ang_error',
+    label: 'Casc: Error Ángulo',
+    unit: '°',
+    visible: props.graficosDefault ? props.graficosDefault.includes('pidc_ang_error') : false,
+    min: null,
+    max: null,
+    series: [
+      { key: 'pidc_ang_error', label: 'Error', color: '#880E4F' },
+      { key: 'pidc_ang_setpoint', label: 'θ_ref', color: '#00838F' },
+    ],
+  },
 ])
 
 const graficosVisibles = computed(() => graficos.filter(g => g.visible))

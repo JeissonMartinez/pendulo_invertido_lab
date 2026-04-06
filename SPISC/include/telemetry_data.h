@@ -33,6 +33,7 @@ enum FirmwareMode {
     MODE_PID,
     MODE_PID_POS,
     MODE_PID_ANG,
+    MODE_PID_CASC,
     MODE_NEURAL,
     MODE_SMC,
     MODE_LQR,
@@ -122,6 +123,36 @@ struct TelemetryPacket {
     float pida_pos_derivada;  // Derivada de posición interno (filtrada)
     float pida_pos_output;    // Salida PID de posición interno
 
+    // Control PID Cascada — Lazo externo (Posición)
+    float pidc_pos_error;        // Error posición: setpoint - pos_actual (cm)
+    float pidc_pos_integral;     // Término integral acumulado
+    float pidc_pos_derivada;     // Término derivativo (filtrado)
+    float pidc_pos_output;       // Salida PID cruda (θ_ref antes de saturación)
+    float pidc_pos_output_sat;   // Salida PID saturada (θ_ref aplicado, ±theta_ref_max)
+    float pidc_pos_setpoint;     // Setpoint posición (cm)
+    float pidc_pos_kp;           // Kp lazo posición
+    float pidc_pos_ki;           // Ki lazo posición
+    float pidc_pos_kd;           // Kd lazo posición
+    float pidc_pos_zona_seg;     // Zona de seguridad (cm)
+
+    // Control PID Cascada — Lazo interno (Ángulo)
+    float pidc_ang_error;        // Error angular: θ_ref - ángulo_actual (°, normalizado ±180)
+    float pidc_ang_integral;     // Término integral acumulado
+    float pidc_ang_derivada;     // Término derivativo (filtrado)
+    float pidc_ang_output;       // Salida PID cruda (antes de saturación)
+    float pidc_ang_output_sat;   // Salida PID saturada (PWM aplicado)
+    float pidc_ang_setpoint;     // Setpoint angular = θ_ref (variable, viene del lazo externo)
+    float pidc_ang_kp;           // Kp lazo ángulo
+    float pidc_ang_ki;           // Ki lazo ángulo
+    float pidc_ang_kd;           // Kd lazo ángulo
+
+    // Control PID Cascada — Parámetros comunes
+    float pidc_rango_trabajo;    // Rango de trabajo angular (grados)
+    float pidc_tolerancia_ang;   // Tolerancia angular (grados)
+    int   pidc_pwm_min;          // PWM mínimo configurado
+    int   pidc_pwm_max;          // PWM máximo configurado
+    float pidc_theta_ref_max;    // Saturación del lazo externo (±grados)
+
     // Meta-telemetría
     bool  telemetry_fast;    // true cuando se publica a 20 Hz (PID activo)
 };
@@ -143,6 +174,7 @@ inline const char* firmwareModeToStr(FirmwareMode m) {
         case MODE_PID:        return "PID";
         case MODE_PID_POS:    return "PID_POS";
         case MODE_PID_ANG:    return "PID_ANG";
+        case MODE_PID_CASC:   return "PID_CASC";
         case MODE_NEURAL:     return "NEURAL";
         case MODE_SMC:        return "SMC";
         case MODE_LQR:        return "LQR";
@@ -160,6 +192,7 @@ inline FirmwareMode strToFirmwareMode(const char* s) {
     if (strcmp(s, "PID")        == 0) return MODE_PID;
     if (strcmp(s, "PID_POS")    == 0) return MODE_PID_POS;
     if (strcmp(s, "PID_ANG")    == 0) return MODE_PID_ANG;
+    if (strcmp(s, "PID_CASC")   == 0) return MODE_PID_CASC;
     if (strcmp(s, "NEURAL")     == 0) return MODE_NEURAL;
     if (strcmp(s, "SMC")        == 0) return MODE_SMC;
     if (strcmp(s, "LQR")        == 0) return MODE_LQR;

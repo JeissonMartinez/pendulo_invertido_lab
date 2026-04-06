@@ -48,6 +48,7 @@
 #include "modes/lazo_abierto_mode.h"
 #include "modes/pid_posicion_mode.h"
 #include "modes/pid_angulo_mode.h"
+#include "modes/pid_cascada_mode.h"
 
 // ══════════════════════════════════════════════════
 // Constantes Dual-Core
@@ -168,9 +169,39 @@ static void buildTelemetry(TelemetryPacket& pkt) {
     pkt.pida_pos_derivada  = PidAnguloMode::getPosDerivada();
     pkt.pida_pos_output    = PidAnguloMode::getPosOutput();
 
+    // Control PID Cascada (valores de PidCascadaMode)
+    // Lazo externo (posición)
+    pkt.pidc_pos_error     = PidCascadaMode::getPosError();
+    pkt.pidc_pos_integral  = PidCascadaMode::getPosIntegral();
+    pkt.pidc_pos_derivada  = PidCascadaMode::getPosDerivada();
+    pkt.pidc_pos_output    = PidCascadaMode::getPosOutput();
+    pkt.pidc_pos_output_sat = PidCascadaMode::getPosOutputSaturated();
+    pkt.pidc_pos_setpoint  = PidCascadaMode::getPosSetpoint();
+    pkt.pidc_pos_kp        = PidCascadaMode::getPosKp();
+    pkt.pidc_pos_ki        = PidCascadaMode::getPosKi();
+    pkt.pidc_pos_kd        = PidCascadaMode::getPosKd();
+    pkt.pidc_pos_zona_seg  = PidCascadaMode::getPosZonaSeguridad();
+    // Lazo interno (ángulo)
+    pkt.pidc_ang_error     = PidCascadaMode::getAngError();
+    pkt.pidc_ang_integral  = PidCascadaMode::getAngIntegral();
+    pkt.pidc_ang_derivada  = PidCascadaMode::getAngDerivada();
+    pkt.pidc_ang_output    = PidCascadaMode::getAngOutput();
+    pkt.pidc_ang_output_sat = PidCascadaMode::getAngOutputSaturated();
+    pkt.pidc_ang_setpoint  = PidCascadaMode::getAngSetpoint();
+    pkt.pidc_ang_kp        = PidCascadaMode::getAngKp();
+    pkt.pidc_ang_ki        = PidCascadaMode::getAngKi();
+    pkt.pidc_ang_kd        = PidCascadaMode::getAngKd();
+    // Parámetros comunes
+    pkt.pidc_rango_trabajo  = PidCascadaMode::getRangoTrabajo();
+    pkt.pidc_tolerancia_ang = PidCascadaMode::getToleranciaAng();
+    pkt.pidc_pwm_min       = PidCascadaMode::getPwmMin();
+    pkt.pidc_pwm_max       = PidCascadaMode::getPwmMax();
+    pkt.pidc_theta_ref_max = PidCascadaMode::getThetaRefMax();
+
     // Flag de telemetría rápida (20 Hz) cuando PID está activo
     pkt.telemetry_fast = ((activeMode == MODE_PID_POS) && PidPosicionMode::isActive())
-                      || ((activeMode == MODE_PID_ANG) && PidAnguloMode::isActive());
+                      || ((activeMode == MODE_PID_ANG) && PidAnguloMode::isActive())
+                      || ((activeMode == MODE_PID_CASC) && PidCascadaMode::isActive());
 }
 
 // ══════════════════════════════════════════════════
@@ -182,6 +213,7 @@ static const char* getActiveModeStateStr() {
         case MODE_OPEN_LOOP:  return LazoAbiertoMode::getStateStr();
         case MODE_PID_POS:    return PidPosicionMode::getStateStr();
         case MODE_PID_ANG:    return PidAnguloMode::getStateStr();
+        case MODE_PID_CASC:   return PidCascadaMode::getStateStr();
         default:              return "IDLE";
     }
 }
@@ -203,6 +235,7 @@ static void switchMode(FirmwareMode newMode) {
         case MODE_OPEN_LOOP:  LazoAbiertoMode::begin(); break;
         case MODE_PID_POS:    PidPosicionMode::begin(); break;
         case MODE_PID_ANG:    PidAnguloMode::begin(); break;
+        case MODE_PID_CASC:   PidCascadaMode::begin(); break;
         default: break;
     }
 }
@@ -221,6 +254,7 @@ static void onMqttCommand(const char* topic, const char* payload) {
             case MODE_OPEN_LOOP:  LazoAbiertoMode::onCommand(topic, payload); break;
             case MODE_PID_POS:    PidPosicionMode::onCommand(topic, payload); break;
             case MODE_PID_ANG:    PidAnguloMode::onCommand(topic, payload); break;
+            case MODE_PID_CASC:   PidCascadaMode::onCommand(topic, payload); break;
             default: break;
         }
         return;
@@ -235,6 +269,7 @@ static void onMqttCommand(const char* topic, const char* payload) {
             else if (strstr(modeKey, "\"OPEN_LOOP\"")) m = MODE_OPEN_LOOP;
             else if (strstr(modeKey, "\"PID_POS\""))   m = MODE_PID_POS;
             else if (strstr(modeKey, "\"PID_ANG\""))   m = MODE_PID_ANG;
+            else if (strstr(modeKey, "\"PID_CASC\""))  m = MODE_PID_CASC;
             else if (strstr(modeKey, "\"IDLE\""))      m = MODE_IDLE;
             switchMode(m);
         }
@@ -280,6 +315,8 @@ static void onMqttCommand(const char* topic, const char* payload) {
         switchMode(MODE_PID_POS);
     } else if (strcmp(topic, TOPIC_CMD_PID_ANG) == 0 && activeMode != MODE_PID_ANG) {
         switchMode(MODE_PID_ANG);
+    } else if (strcmp(topic, TOPIC_CMD_PID_CASC) == 0 && activeMode != MODE_PID_CASC) {
+        switchMode(MODE_PID_CASC);
     }
 
     // Enrutar al modo activo
@@ -288,6 +325,7 @@ static void onMqttCommand(const char* topic, const char* payload) {
         case MODE_OPEN_LOOP:  LazoAbiertoMode::onCommand(topic, payload); break;
         case MODE_PID_POS:    PidPosicionMode::onCommand(topic, payload); break;
         case MODE_PID_ANG:    PidAnguloMode::onCommand(topic, payload); break;
+        case MODE_PID_CASC:   PidCascadaMode::onCommand(topic, payload); break;
         default: break;
     }
 }
@@ -351,6 +389,7 @@ void taskSensorsAndControl(void* pvParameters) {
             case MODE_OPEN_LOOP:  LazoAbiertoMode::loop(); break;
             case MODE_PID_POS:    PidPosicionMode::loop(); break;
             case MODE_PID_ANG:    PidAnguloMode::loop(); break;
+            case MODE_PID_CASC:   PidCascadaMode::loop(); break;
             default: break;
         }
 

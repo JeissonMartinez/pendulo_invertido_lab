@@ -104,6 +104,7 @@ class GestorWebSocket:
             "cmd_openloop": config.TOPICO_CMD_OPENLOOP,
             "cmd_pidpos": config.TOPICO_CMD_PID_POS,
             "cmd_pidang": config.TOPICO_CMD_PID_ANG,
+            "cmd_pidcasc": config.TOPICO_CMD_PID_CASC,
         }
 
         topico = mapa_topicos.get(tipo)

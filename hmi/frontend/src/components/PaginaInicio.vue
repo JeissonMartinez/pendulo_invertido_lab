@@ -63,6 +63,12 @@ const experimentos = [
     titulo: 'Control PID Ángulo',
     desc: 'Estabilización angular del péndulo invertido con PID en tiempo real. Setpoint: 0° (vertical).',
   },
+  {
+    id: 'pid_cascada',
+    icon: '🔄',
+    titulo: 'Control PID Cascada',
+    desc: 'Control cascada: PID posición genera referencia angular para PID ángulo. Estabilización con control de posición simultáneo.',
+  },
 ]
 </script>
 

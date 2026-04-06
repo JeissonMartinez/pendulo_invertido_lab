@@ -15,7 +15,7 @@
 namespace MqttComm {
 
 static MqttBridge _bridge;
-static char _jsonBuf[1280];  // Buffer para JSON (ampliado para telemetría extendida + PID ángulo)
+static char _jsonBuf[2048];  // Buffer para JSON (ampliado para telemetría + PID ángulo + PID cascada)
 
 // ══════════════════════════════════════════════════
 // Cola de comandos thread-safe
@@ -58,6 +58,7 @@ bool begin() {
         _bridge.subscribe(TOPIC_CMD_OPENLOOP);
         _bridge.subscribe(TOPIC_CMD_PID_POS);
         _bridge.subscribe(TOPIC_CMD_PID_ANG);
+        _bridge.subscribe(TOPIC_CMD_PID_CASC);
         _bridge.subscribe(TOPIC_CMD_DEBUG);
         _bridge.subscribe(TOPIC_TIME_SYNC);  // Sincronización de tiempo
         
@@ -103,6 +104,18 @@ void publishTelemetry(const TelemetryPacket& p) {
         "\"pida_pwm_min\":%d,\"pida_pwm_max\":%d,\"pida_pos_setpoint\":%.2f,"
         "\"pida_pos_error\":%.3f,\"pida_pos_integral\":%.3f,"
         "\"pida_pos_derivada\":%.3f,\"pida_pos_output\":%.1f,"
+        // Control PID Cascada - lazo externo (posición)
+        "\"pidc_pos_error\":%.3f,\"pidc_pos_integral\":%.3f,\"pidc_pos_derivada\":%.3f,"
+        "\"pidc_pos_output\":%.1f,\"pidc_pos_output_sat\":%.3f,"
+        "\"pidc_pos_setpoint\":%.2f,\"pidc_pos_kp\":%.3f,\"pidc_pos_ki\":%.4f,\"pidc_pos_kd\":%.3f,"
+        "\"pidc_pos_zona_seg\":%.1f,"
+        // Control PID Cascada - lazo interno (ángulo)
+        "\"pidc_ang_error\":%.3f,\"pidc_ang_integral\":%.3f,\"pidc_ang_derivada\":%.3f,"
+        "\"pidc_ang_output\":%.1f,\"pidc_ang_output_sat\":%.1f,"
+        "\"pidc_ang_setpoint\":%.3f,\"pidc_ang_kp\":%.2f,\"pidc_ang_ki\":%.3f,\"pidc_ang_kd\":%.3f,"
+        // Control PID Cascada - parámetros comunes
+        "\"pidc_rango_trabajo\":%.1f,\"pidc_tolerancia_ang\":%.1f,"
+        "\"pidc_pwm_min\":%d,\"pidc_pwm_max\":%d,\"pidc_theta_ref_max\":%.2f,"
         // Mantener campos de compatibilidad con frontend actual
         "\"angle\":%.2f,\"position\":%.2f,\"cart_accel\":%.3f,\"rpm\":%.1f,"
         "\"posicion\":%.2f,\"direccion\":%d"
@@ -130,6 +143,18 @@ void publishTelemetry(const TelemetryPacket& p) {
         p.pida_pwm_min, p.pida_pwm_max, p.pida_pos_setpoint,
         p.pida_pos_error, p.pida_pos_integral,
         p.pida_pos_derivada, p.pida_pos_output,
+        // PID Cascada - lazo externo (posición)
+        p.pidc_pos_error, p.pidc_pos_integral, p.pidc_pos_derivada,
+        p.pidc_pos_output, p.pidc_pos_output_sat,
+        p.pidc_pos_setpoint, p.pidc_pos_kp, p.pidc_pos_ki, p.pidc_pos_kd,
+        p.pidc_pos_zona_seg,
+        // PID Cascada - lazo interno (ángulo)
+        p.pidc_ang_error, p.pidc_ang_integral, p.pidc_ang_derivada,
+        p.pidc_ang_output, p.pidc_ang_output_sat,
+        p.pidc_ang_setpoint, p.pidc_ang_kp, p.pidc_ang_ki, p.pidc_ang_kd,
+        // PID Cascada - parámetros comunes
+        p.pidc_rango_trabajo, p.pidc_tolerancia_ang,
+        p.pidc_pwm_min, p.pidc_pwm_max, p.pidc_theta_ref_max,
         // Compatibilidad: angle=angle_pend, position=pos_mag_cm, cart_accel=mpu_ax, rpm=rpm_ir
         p.angle_pend, p.pos_mag_cm, p.mpu_ax, p.rpm_ir,
         p.pos_mag_cm, (int)p.direction
@@ -154,7 +179,17 @@ void publishTelemetryFast(const TelemetryPacket& p) {
         "\"pida_rango_trabajo\":%.1f,\"pida_tolerancia\":%.1f,"
         "\"pida_pwm_min\":%d,\"pida_pwm_max\":%d,\"pida_pos_setpoint\":%.2f,"
         "\"pida_pos_error\":%.3f,\"pida_pos_integral\":%.3f,"
-        "\"pida_pos_derivada\":%.3f,\"pida_pos_output\":%.1f"
+        "\"pida_pos_derivada\":%.3f,\"pida_pos_output\":%.1f,"
+        // PID Cascada compacto
+        "\"pidc_pos_error\":%.3f,\"pidc_pos_output\":%.1f,\"pidc_pos_output_sat\":%.3f,"
+        "\"pidc_pos_setpoint\":%.2f,\"pidc_pos_integral\":%.3f,\"pidc_pos_derivada\":%.3f,"
+        "\"pidc_ang_error\":%.3f,\"pidc_ang_output\":%.1f,\"pidc_ang_output_sat\":%.1f,"
+        "\"pidc_ang_setpoint\":%.3f,\"pidc_ang_integral\":%.3f,\"pidc_ang_derivada\":%.3f,"
+        "\"pidc_ang_kp\":%.2f,\"pidc_ang_ki\":%.3f,\"pidc_ang_kd\":%.3f,"
+        "\"pidc_rango_trabajo\":%.1f,\"pidc_tolerancia_ang\":%.1f,"
+        "\"pidc_pwm_min\":%d,\"pidc_pwm_max\":%d,\"pidc_theta_ref_max\":%.2f,"
+        "\"pidc_pos_kp\":%.3f,\"pidc_pos_ki\":%.4f,\"pidc_pos_kd\":%.3f,"
+        "\"pidc_pos_zona_seg\":%.1f"
         "}",
         p.ts, firmwareModeToStr(p.modo), p.ol_state ? p.ol_state : "",
         (unsigned long)p.pulsos_ir, p.pos_ir_cm, p.pos_mag_cm,
@@ -170,7 +205,17 @@ void publishTelemetryFast(const TelemetryPacket& p) {
         p.pida_rango_trabajo, p.pida_tolerancia,
         p.pida_pwm_min, p.pida_pwm_max, p.pida_pos_setpoint,
         p.pida_pos_error, p.pida_pos_integral,
-        p.pida_pos_derivada, p.pida_pos_output
+        p.pida_pos_derivada, p.pida_pos_output,
+        // PID Cascada compacto
+        p.pidc_pos_error, p.pidc_pos_output, p.pidc_pos_output_sat,
+        p.pidc_pos_setpoint, p.pidc_pos_integral, p.pidc_pos_derivada,
+        p.pidc_ang_error, p.pidc_ang_output, p.pidc_ang_output_sat,
+        p.pidc_ang_setpoint, p.pidc_ang_integral, p.pidc_ang_derivada,
+        p.pidc_ang_kp, p.pidc_ang_ki, p.pidc_ang_kd,
+        p.pidc_rango_trabajo, p.pidc_tolerancia_ang,
+        p.pidc_pwm_min, p.pidc_pwm_max, p.pidc_theta_ref_max,
+        p.pidc_pos_kp, p.pidc_pos_ki, p.pidc_pos_kd,
+        p.pidc_pos_zona_seg
     );
     _bridge.publish(TOPIC_TELEMETRY, _jsonBuf);
 }

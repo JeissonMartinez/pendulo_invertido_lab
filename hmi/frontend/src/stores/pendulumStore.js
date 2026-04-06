@@ -76,6 +76,33 @@ export const usePendulumStore = defineStore('pendulum', () => {
     pida_pwm_min: 0,
     pida_pwm_max: 0,
     pida_pos_setpoint: 0,
+    // PID Cascada - lazo externo (posición)
+    pidc_pos_error: 0,
+    pidc_pos_integral: 0,
+    pidc_pos_derivada: 0,
+    pidc_pos_output: 0,
+    pidc_pos_output_sat: 0,
+    pidc_pos_setpoint: 0,
+    pidc_pos_kp: 0,
+    pidc_pos_ki: 0,
+    pidc_pos_kd: 0,
+    pidc_pos_zona_seg: 0,
+    // PID Cascada - lazo interno (ángulo)
+    pidc_ang_error: 0,
+    pidc_ang_integral: 0,
+    pidc_ang_derivada: 0,
+    pidc_ang_output: 0,
+    pidc_ang_output_sat: 0,
+    pidc_ang_setpoint: 0,
+    pidc_ang_kp: 0,
+    pidc_ang_ki: 0,
+    pidc_ang_kd: 0,
+    // PID Cascada - parámetros comunes
+    pidc_rango_trabajo: 0,
+    pidc_tolerancia_ang: 0,
+    pidc_pwm_min: 0,
+    pidc_pwm_max: 0,
+    pidc_theta_ref_max: 0,
   })
 
   // ── Estado del sistema ───────────────────────
@@ -128,6 +155,20 @@ export const usePendulumStore = defineStore('pendulum', () => {
     // PID Posición interno (dentro de PID Ángulo)
     pida_pos_error: [],
     pida_pos_output: [],
+    // PID Cascada - lazo externo (posición)
+    pidc_pos_error: [],
+    pidc_pos_integral: [],
+    pidc_pos_derivada: [],
+    pidc_pos_output: [],
+    pidc_pos_output_sat: [],
+    pidc_pos_setpoint: [],
+    // PID Cascada - lazo interno (ángulo)
+    pidc_ang_error: [],
+    pidc_ang_integral: [],
+    pidc_ang_derivada: [],
+    pidc_ang_output: [],
+    pidc_ang_output_sat: [],
+    pidc_ang_setpoint: [],
   })
 
   // ── Navegación multi-experimento ─────────────
@@ -179,6 +220,27 @@ export const usePendulumStore = defineStore('pendulum', () => {
     pwm_max: 900,
   })
   const pidAngResults = ref([])
+
+  // ── Estado PID Cascada ───────────────────────
+  const pidCascState = ref({
+    status: 'PIDC_IDLE',
+    // Lazo externo (posición)
+    kp_pos: 0.5,
+    ki_pos: 0.01,
+    kd_pos: 0.1,
+    pos_setpoint: 45.0,
+    zona_seguridad: 5.0,
+    theta_ref_max: 2.0,
+    // Lazo interno (ángulo)
+    kp_ang: 40.0,
+    ki_ang: 1.0,
+    kd_ang: 0.5,
+    rango_trabajo: 20.0,
+    tolerancia_ang: 0.1,
+    pwm_min: 250,
+    pwm_max: 900,
+  })
+  const pidCascResults = ref([])
 
   // ── WebSocket send callback ──────────────────
   let _wsSend = null
@@ -269,6 +331,33 @@ export const usePendulumStore = defineStore('pendulum', () => {
       pida_pos_integral: d.pida_pos_integral ?? 0,
       pida_pos_derivada: d.pida_pos_derivada ?? 0,
       pida_pos_output: d.pida_pos_output ?? 0,
+      // PID Cascada - lazo externo (posición)
+      pidc_pos_error: d.pidc_pos_error ?? 0,
+      pidc_pos_integral: d.pidc_pos_integral ?? 0,
+      pidc_pos_derivada: d.pidc_pos_derivada ?? 0,
+      pidc_pos_output: d.pidc_pos_output ?? 0,
+      pidc_pos_output_sat: d.pidc_pos_output_sat ?? 0,
+      pidc_pos_setpoint: d.pidc_pos_setpoint ?? 0,
+      pidc_pos_kp: d.pidc_pos_kp ?? 0,
+      pidc_pos_ki: d.pidc_pos_ki ?? 0,
+      pidc_pos_kd: d.pidc_pos_kd ?? 0,
+      pidc_pos_zona_seg: d.pidc_pos_zona_seg ?? 0,
+      // PID Cascada - lazo interno (ángulo)
+      pidc_ang_error: d.pidc_ang_error ?? 0,
+      pidc_ang_integral: d.pidc_ang_integral ?? 0,
+      pidc_ang_derivada: d.pidc_ang_derivada ?? 0,
+      pidc_ang_output: d.pidc_ang_output ?? 0,
+      pidc_ang_output_sat: d.pidc_ang_output_sat ?? 0,
+      pidc_ang_setpoint: d.pidc_ang_setpoint ?? 0,
+      pidc_ang_kp: d.pidc_ang_kp ?? 0,
+      pidc_ang_ki: d.pidc_ang_ki ?? 0,
+      pidc_ang_kd: d.pidc_ang_kd ?? 0,
+      // PID Cascada - parámetros comunes
+      pidc_rango_trabajo: d.pidc_rango_trabajo ?? 0,
+      pidc_tolerancia_ang: d.pidc_tolerancia_ang ?? 0,
+      pidc_pwm_min: d.pidc_pwm_min ?? 0,
+      pidc_pwm_max: d.pidc_pwm_max ?? 0,
+      pidc_theta_ref_max: d.pidc_theta_ref_max ?? 0,
       // Preservar sweep embebido en telametría
       sweep: d.sweep ?? null,
     }
@@ -317,6 +406,24 @@ export const usePendulumStore = defineStore('pendulum', () => {
         if (norm.pid_pwm_min > 0) pidPosState.value.pwm_min = norm.pid_pwm_min
         if (norm.pid_pwm_max > 0) pidPosState.value.pwm_max = norm.pid_pwm_max
       }
+      // Actualizar pidCascState desde telemetría cuando modo es PID_CASC
+      if (norm.modo === 'PID_CASC' || datos.modo === 'PID_CASC') {
+        const pidcSt = datos.ol_state ?? datos.pid_state ?? norm.pid_state ?? 'PIDC_IDLE'
+        pidCascState.value.status = pidcSt
+        if (norm.pidc_pos_kp > 0) pidCascState.value.kp_pos = norm.pidc_pos_kp
+        if (norm.pidc_pos_ki >= 0) pidCascState.value.ki_pos = norm.pidc_pos_ki
+        if (norm.pidc_pos_kd >= 0) pidCascState.value.kd_pos = norm.pidc_pos_kd
+        if (norm.pidc_pos_setpoint > 0) pidCascState.value.pos_setpoint = norm.pidc_pos_setpoint
+        if (norm.pidc_pos_zona_seg > 0) pidCascState.value.zona_seguridad = norm.pidc_pos_zona_seg
+        if (norm.pidc_theta_ref_max > 0) pidCascState.value.theta_ref_max = norm.pidc_theta_ref_max
+        if (norm.pidc_ang_kp > 0) pidCascState.value.kp_ang = norm.pidc_ang_kp
+        if (norm.pidc_ang_ki >= 0) pidCascState.value.ki_ang = norm.pidc_ang_ki
+        if (norm.pidc_ang_kd >= 0) pidCascState.value.kd_ang = norm.pidc_ang_kd
+        if (norm.pidc_rango_trabajo > 0) pidCascState.value.rango_trabajo = norm.pidc_rango_trabajo
+        if (norm.pidc_tolerancia_ang > 0) pidCascState.value.tolerancia_ang = norm.pidc_tolerancia_ang
+        if (norm.pidc_pwm_min > 0) pidCascState.value.pwm_min = norm.pidc_pwm_min
+        if (norm.pidc_pwm_max > 0) pidCascState.value.pwm_max = norm.pidc_pwm_max
+      }
       // Actualizar pidAngState desde telemetría cuando modo es PID_ANG
       if (norm.modo === 'PID_ANG' || datos.modo === 'PID_ANG') {
         const pidaSt = datos.ol_state ?? datos.pid_state ?? norm.pid_state ?? 'PIDA_IDLE'
@@ -361,6 +468,11 @@ export const usePendulumStore = defineStore('pendulum', () => {
       if (datos.modo === 'PID_ANG' || datos.mode === 'PID_ANG') {
         const st = datos.estado ?? datos.state ?? 'PIDA_IDLE'
         pidAngState.value.status = st
+      }
+      // Actualizar pidCascState si estamos en modo PID_CASC
+      if (datos.modo === 'PID_CASC' || datos.mode === 'PID_CASC') {
+        const st = datos.estado ?? datos.state ?? 'PIDC_IDLE'
+        pidCascState.value.status = st
       }
     } else if (tipo === 'limites') {
       // Normalizar nombres de limit switches
@@ -440,6 +552,20 @@ export const usePendulumStore = defineStore('pendulum', () => {
     // PID Posición interno
     h.pida_pos_error.push(datos.pida_pos_error ?? 0)
     h.pida_pos_output.push(datos.pida_pos_output ?? 0)
+    // PID Cascada - lazo externo (posición)
+    h.pidc_pos_error.push(datos.pidc_pos_error ?? 0)
+    h.pidc_pos_integral.push(datos.pidc_pos_integral ?? 0)
+    h.pidc_pos_derivada.push(datos.pidc_pos_derivada ?? 0)
+    h.pidc_pos_output.push(datos.pidc_pos_output ?? 0)
+    h.pidc_pos_output_sat.push(datos.pidc_pos_output_sat ?? 0)
+    h.pidc_pos_setpoint.push(datos.pidc_pos_setpoint ?? 0)
+    // PID Cascada - lazo interno (ángulo)
+    h.pidc_ang_error.push(datos.pidc_ang_error ?? 0)
+    h.pidc_ang_integral.push(datos.pidc_ang_integral ?? 0)
+    h.pidc_ang_derivada.push(datos.pidc_ang_derivada ?? 0)
+    h.pidc_ang_output.push(datos.pidc_ang_output ?? 0)
+    h.pidc_ang_output_sat.push(datos.pidc_ang_output_sat ?? 0)
+    h.pidc_ang_setpoint.push(datos.pidc_ang_setpoint ?? 0)
 
     // Recortar al tamaño máximo
     if (h.ts.length > BUFFER_SIZE) {
@@ -483,6 +609,18 @@ export const usePendulumStore = defineStore('pendulum', () => {
       })
       if (pidAngResults.value.length > 10000) {
         pidAngResults.value.splice(0, pidAngResults.value.length - 10000)
+      }
+    }
+
+    // Si está en modo PID_CASC, agregar a resultados PID cascada
+    if (datos.modo === 'PID_CASC' || experimentoActivo.value === 'pid_cascada') {
+      pidCascResults.value.push({
+        ...datos,
+        ts: ahora,
+        state: datos.pid_state || pidCascState.value.status || estado.value.state,
+      })
+      if (pidCascResults.value.length > 10000) {
+        pidCascResults.value.splice(0, pidCascResults.value.length - 10000)
       }
     }
   }
@@ -624,6 +762,41 @@ export const usePendulumStore = defineStore('pendulum', () => {
     pidAngResults.value = []
   }
 
+  // ── Acciones PID Cascada ─────────────────────
+  function enviarComandoPidCasc(action, params = {}) {
+    const datos = { action, ...params }
+    enviarComando('cmd_pidcasc', datos)
+  }
+
+  function homePidCasc() {
+    enviarComandoPidCasc('home')
+  }
+
+  function endPidCasc() {
+    enviarComandoPidCasc('end')
+  }
+
+  function configurarPidCasc(config) {
+    Object.assign(pidCascState.value, config)
+    enviarComandoPidCasc('config', config)
+  }
+
+  function ejecutarPidCasc() {
+    enviarComandoPidCasc('run')
+  }
+
+  function detenerPidCasc() {
+    enviarComandoPidCasc('stop')
+  }
+
+  function resetPidCasc() {
+    enviarComandoPidCasc('reset')
+  }
+
+  function limpiarResultadosPidCasc() {
+    pidCascResults.value = []
+  }
+
   // ── Computed ─────────────────────────────────
   const estadoTexto = computed(() => estado.value.state)
   const modoTexto = computed(() => estado.value.mode)
@@ -652,6 +825,9 @@ export const usePendulumStore = defineStore('pendulum', () => {
     // PID Ángulo
     pidAngState,
     pidAngResults,
+    // PID Cascada
+    pidCascState,
+    pidCascResults,
     // Computed
     estadoTexto,
     modoTexto,
@@ -692,5 +868,14 @@ export const usePendulumStore = defineStore('pendulum', () => {
     detenerPidAng,
     resetPidAng,
     limpiarResultadosPidAng,
+    // PID Cascada actions
+    enviarComandoPidCasc,
+    homePidCasc,
+    endPidCasc,
+    configurarPidCasc,
+    ejecutarPidCasc,
+    detenerPidCasc,
+    resetPidCasc,
+    limpiarResultadosPidCasc,
   }
 })
