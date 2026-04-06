@@ -143,7 +143,8 @@ pendulo_invertido/
 │       ├── modes/                  # Modos de control modulares
 │       │   ├── lazo_abierto_mode.h/cpp
 │       │   ├── rango_pwm_mode.h/cpp
-│       │   └── pid_posicion_mode.h/cpp
+│       │   ├── pid_posicion_mode.h/cpp
+│       │   └── pid_angulo_mode.h/cpp
 │       ├── motor_control.cpp       # Implementación motor
 │       ├── sensors_i2c.cpp         # Lectura de sensores
 │       ├── encoder_ir.cpp          # Encoder infrarrojo
@@ -169,7 +170,8 @@ pendulo_invertido/
 │   │           ├── tabs/           # Pestañas de experimentos
 │   │           │   ├── TabRangoPWM.vue
 │   │           │   ├── TabLazoAbierto.vue
-│   │           │   └── TabControlPidPosicion.vue
+│   │           │   ├── TabControlPidPosicion.vue
+│   │           │   └── TabControlPidAngulo.vue
 │   │           ├── AnimacionPendulo.vue
 │   │           ├── GraficosTelemetria.vue
 │   │           └── PanelControl.vue
@@ -331,6 +333,7 @@ pkill mosquitto; pkill -f uvicorn
   - **Barrido PWM:** Caracterización del rango operativo con tabla de resultados
   - **Lazo Abierto:** Movimientos controlados con homing automático
   - **PID Posición:** Control de posición con configuración de ganancias en vivo
+  - **PID Ángulo:** Estabilización vertical del péndulo con telemetría PID extendida
 - **Parada de emergencia** desde cualquier pantalla
 - **Editor de parámetros** para configuración dinámica del controlador
 - **Exportación CSV** de datos experimentales
@@ -393,6 +396,7 @@ El sistema utiliza una arquitectura modular (Strategy pattern) para soportar mú
 | **Lazo Abierto** | `MODE_OPEN_LOOP` | Movimientos controlados con homing automático | ✅ Completo |
 | **Barrido PWM** | `MODE_SWEEP_PWM` | Caracterización del rango operativo del motor | ✅ Completo |
 | **PID Posición** | `MODE_PID_POS` | Control PID discreto para posicionar el carro | ✅ Completo |
+| **PID Ángulo** | `MODE_PID_ANG` | PID de ángulo para estabilización vertical del péndulo | ✅ Completo |
 | **Idle** | `MODE_IDLE` | Estado de reposo, motor detenido | ✅ Completo |
 
 ### Modos planificados
@@ -400,7 +404,7 @@ El sistema utiliza una arquitectura modular (Strategy pattern) para soportar mú
 | Modo | Enum | Descripción |
 |---|---|---|
 | **Manual** | `MODE_MANUAL` | Control directo de PWM desde la HMI |
-| **PID Cascada** | `MODE_PID` | Lazo exterior (posición) + lazo interior (ángulo) |
+| **PID Cascada** | `MODE_PID` | Lazo exterior (posición) + lazo interior (ángulo) para equilibrio completo |
 | **Red Neuronal FF** | `MODE_NEURAL` | Red 3→3→1 con entrenamiento online |
 | **SMC** | `MODE_SMC` | Régimen deslizante — robusto ante perturbaciones |
 | **LQR** | `MODE_LQR` | Regulador cuadrático lineal — control óptimo |
@@ -420,6 +424,22 @@ El sistema utiliza una arquitectura modular (Strategy pattern) para soportar mú
 
 > Documentación detallada en [`docs/control_pid_posicion.md`](docs/control_pid_posicion.md)
 
+### Características del PID Ángulo
+
+- Frecuencia de control: 1000 Hz (Core 0)
+- Sensor: AS5600 magnético absoluto (12-bit)
+- Normalización del error angular a [−180°, +180°] para manejar cruce 360°/0°
+- Rango de trabajo configurable (±20° por defecto) con detección automática de entrada/salida
+- Motor bias aditivo (300 PWM) para compensar la zona muerta del motor
+- Anti-windup con saturación de integral ±500
+- Filtro derivativo pasa-bajos (α = 0.2)
+- PID de posición interno para pre-posicionamiento automático del carro a 45 cm
+- Máquina de estados completa: IDLE → HOMING → CALIBRATING → PREPOSITIONING → READY → ACTIVE → STOPPED
+- Telemetría extendida: error, integral, derivada, salida, setpoint (campos `pida_*`)
+- Configuración dinámica de ganancias Kp, Ki, Kd y parámetros de control vía MQTT
+
+> Documentación detallada en [`docs/control_pid_angulo.md`](docs/control_pid_angulo.md)
+
 ---
 
 ## Documentación
@@ -427,6 +447,7 @@ El sistema utiliza una arquitectura modular (Strategy pattern) para soportar mú
 | Documento | Descripción |
 |---|---|
 | [`docs/control_pid_posicion.md`](docs/control_pid_posicion.md) | Documentación completa del modo PID Posición |
+| [`docs/control_pid_angulo.md`](docs/control_pid_angulo.md) | Documentación completa del modo PID Ángulo |
 | [`docs/calibracion_posicion_ir.md`](docs/calibracion_posicion_ir.md) | Calibración del encoder infrarrojo HC-020K |
 | [`docs/calibracion_posicion_mag.md`](docs/calibracion_posicion_mag.md) | Calibración del encoder magnético AS5600 |
 | [`docs/config_dual_core.md`](docs/config_dual_core.md) | Configuración de la arquitectura dual-core |
@@ -447,9 +468,10 @@ El sistema utiliza una arquitectura modular (Strategy pattern) para soportar mú
 | **4** | HMI Web (Vue.js + MQTT + FastAPI) | ✅ Activo (v0.3.0) |
 | **5** | Arquitectura dual-core ESP32 (Core 0: control, Core 1: comunicación) | ✅ Completado |
 | **6** | Control PID de Posición con telemetría extendida | ✅ Completado |
-| **7** | Control PID Cascada (ángulo + posición) para equilibrar péndulo | En progreso |
-| **8** | Controladores avanzados (SMC, LQR, MPC) | Planificado |
-| **9** | Red neuronal con entrenamiento online | Planificado |
+| **7** | Control PID de Ángulo con bias de motor y pre-posicionamiento | ✅ Completado |
+| **8** | Control PID Cascada (ángulo + posición) para equilibrio completo | En progreso |
+| **9** | Controladores avanzados (SMC, LQR, MPC) | Planificado |
+| **10** | Red neuronal con entrenamiento online | Planificado |
 
 > El detalle completo de cada fase está en [`docs/plan_mejoras.md`](docs/plan_mejoras.md).
 
