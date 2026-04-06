@@ -9,7 +9,7 @@
  *
  * Estados:
  *   PIDC_IDLE → PIDC_HOMING_START → PIDC_CALIBRATING → PIDC_WAIT_READY
- *     → PIDC_READY → PIDC_RUNNING → PIDC_STOPPED
+ *     → PIDC_PREPOSITIONING → PIDC_READY → PIDC_RUNNING → PIDC_STOPPED
  *
  * Comandos (via pendulum/cmd/pidcasc):
  *   {"action":"home"}    — mover a LS_START
@@ -49,7 +49,8 @@ enum PidcState {
     PIDC_HOMING_END,       // Moviendo hacia LS_END
     PIDC_CALIBRATING,      // Auto-calibración de sensores de posición
     PIDC_WAIT_READY,       // Esperando 2s post-home para estabilización
-    PIDC_READY,            // Esperando botón EJECUTAR del usuario
+    PIDC_PREPOSITIONING,   // Moviendo carro al centro del riel
+    PIDC_READY,            // Esperando péndulo vertical (auto-transición)
     PIDC_RUNNING,          // Control cascada activo
     PIDC_STOPPED           // Detenido (por comando, límite o error)
 };
@@ -87,6 +88,7 @@ static const float DEFAULT_POS_KD         = 0.1f;
 static const float DEFAULT_POS_SETPOINT   = 45.0f;    // Centro del riel (cm)
 static const float DEFAULT_POS_ZONA_SEG   = 5.0f;     // cm desde cada extremo
 static const float DEFAULT_THETA_REF_MAX  = 2.0f;     // ±grados de saturación
+static const float DEFAULT_TOLERANCIA_POS = 0.5f;     // cm (zona muerta posición)
 
 static const float MIN_POS_KP = 0.0f,  MAX_POS_KP = 20.0f;
 static const float MIN_POS_KI = 0.0f,  MAX_POS_KI = 5.0f;
@@ -94,6 +96,7 @@ static const float MIN_POS_KD = 0.0f,  MAX_POS_KD = 5.0f;
 static const float MIN_POS_SETPOINT = 5.0f;
 static const float MIN_POS_ZONA_SEG = 2.0f, MAX_POS_ZONA_SEG = 20.0f;
 static const float MIN_THETA_REF_MAX = 0.5f, MAX_THETA_REF_MAX = 10.0f;
+static const float MIN_TOLERANCIA_POS = 0.0f, MAX_TOLERANCIA_POS = 5.0f;
 
 static const float POS_INTEGRAL_MAX = 500.0f;
 
@@ -101,6 +104,14 @@ static const float POS_INTEGRAL_MAX = 500.0f;
 static const unsigned long HOMING_TIMEOUT_MS   = 30000;  // 30s
 static const unsigned long CALIB_DURATION_MS   = 200;    // Pausa post-calibración
 static const unsigned long WAIT_READY_MS       = 2000;   // 2s espera antes de READY
+
+// Prepositioning (PID posición simple para mover carro al centro)
+static const float PREPOS_KP          = 6.0f;
+static const float PREPOS_KI          = 1.5f;
+static const float PREPOS_KD          = 0.0f;
+static const float PREPOS_TOLERANCIA  = 0.5f;    // cm
+static const int   PREPOS_PWM_MAX     = 700;
+static const unsigned long SETTLE_TIME_MS = 500; // Tiempo de asentamiento
 
 // ══════════════════════════════════════════════════
 // Variables de estado
@@ -111,6 +122,11 @@ static unsigned long _stateEntry = 0;
 // Posición conocida
 static bool _atStart = false;
 static bool _atEnd   = false;
+
+// Variables de prepositioning
+static unsigned long _posInToleranceTime = 0;
+static bool _posWasInTolerance = false;
+static unsigned long _lastPosDebugPrint = 0;
 
 // ══════════════════════════════════════════════════
 // Parámetros PID Ángulo — lazo interno (configurables via MQTT)
@@ -132,6 +148,7 @@ static float _posKd = DEFAULT_POS_KD;
 static float _posSetpoint = DEFAULT_POS_SETPOINT;
 static float _posZonaSeg = DEFAULT_POS_ZONA_SEG;
 static float _thetaRefMax = DEFAULT_THETA_REF_MAX;
+static float _toleranciaPos = DEFAULT_TOLERANCIA_POS;
 
 // ══════════════════════════════════════════════════
 // Variables del controlador — Lazo interno (Ángulo)
@@ -180,6 +197,7 @@ static float _pendingRangoTrabajo = DEFAULT_RANGO_TRABAJO;
 static float _pendingToleranciaAng = DEFAULT_TOLERANCIA_ANG;
 static float _pendingPosZonaSeg = DEFAULT_POS_ZONA_SEG;
 static float _pendingThetaRefMax = DEFAULT_THETA_REF_MAX;
+static float _pendingToleranciaPos = DEFAULT_TOLERANCIA_POS;
 static int   _pendingPwmMin = DEFAULT_PWM_MIN;
 static int   _pendingPwmMax = DEFAULT_PWM_MAX;
 
@@ -213,6 +231,8 @@ static void _resetPositionPidVariables() {
     _posOutput = 0.0f;
     _posOutputSaturated = 0.0f;
     _posLastControlTime = millis();
+    _posWasInTolerance = false;
+    _posInToleranceTime = 0;
 }
 
 /**
@@ -230,6 +250,48 @@ static float _normalizeAngleError(float error) {
  */
 static bool _inWorkingRange(float angle, float range) {
     return (angle <= range) || (angle >= (360.0f - range));
+}
+
+/**
+ * PID de posición simple para pre-posicionamiento.
+ * Mueve el carro a _posSetpoint. Retorna true si está en tolerancia.
+ */
+static bool _executePrepositionPid(float posActual) {
+    unsigned long now = millis();
+    float dt = (now - _posLastControlTime) / 1000.0f;
+    _posLastControlTime = now;
+
+    if (dt < 0.0005f) dt = 0.001f;
+    if (dt > 0.1f) dt = 0.1f;
+
+    _posError = _posSetpoint - posActual;
+
+    _posIntegral += _posError * dt;
+    if (_posIntegral > POS_INTEGRAL_MAX) _posIntegral = POS_INTEGRAL_MAX;
+    if (_posIntegral < -POS_INTEGRAL_MAX) _posIntegral = -POS_INTEGRAL_MAX;
+
+    _posDerivada = (_posError - _posErrorPrev) / dt;
+    _posDerivadaFiltrada = DERIV_FILTER_ALPHA * _posDerivada + (1.0f - DERIV_FILTER_ALPHA) * _posDerivadaFiltrada;
+    _posErrorPrev = _posError;
+
+    _posOutput = PREPOS_KP * _posError + PREPOS_KI * _posIntegral + PREPOS_KD * _posDerivadaFiltrada;
+
+    bool inTolerance = (fabsf(_posError) <= PREPOS_TOLERANCIA);
+
+    if (inTolerance) {
+        Motor::freno();
+    } else {
+        int pwm = (int)fabsf(_posOutput) + MOTOR_BIAS;
+        if (pwm > PREPOS_PWM_MAX) pwm = PREPOS_PWM_MAX;
+
+        if (_posOutput > 0) {
+            Motor::adelante(pwm);
+        } else {
+            Motor::atras(pwm);
+        }
+    }
+
+    return inTolerance;
 }
 
 /**
@@ -281,9 +343,17 @@ static void _executePositionLoop(float posActual) {
     _posOutput = _posKp * _posError + _posKi * _posIntegral + _posKd * _posDerivadaFiltrada;
 
     // 5. Saturar salida a ±theta_ref_max grados
-    _posOutputSaturated = _posOutput;
-    if (_posOutputSaturated > _thetaRefMax) _posOutputSaturated = _thetaRefMax;
-    if (_posOutputSaturated < -_thetaRefMax) _posOutputSaturated = -_thetaRefMax;
+    //    Signo invertido: error_pos positivo (carro a la izquierda del SP)
+    //    necesita θ_ref negativo para inclinar el péndulo hacia la izquierda
+    //    y que el carro lo persiga hacia la derecha.
+    //    Zona muerta: si el error está dentro de tolerancia, θ_ref = 0
+    if (fabsf(_posError) <= _toleranciaPos) {
+        _posOutputSaturated = 0.0f;
+    } else {
+        _posOutputSaturated = -_posOutput;
+        if (_posOutputSaturated > _thetaRefMax) _posOutputSaturated = _thetaRefMax;
+        if (_posOutputSaturated < -_thetaRefMax) _posOutputSaturated = -_thetaRefMax;
+    }
 }
 
 /**
@@ -373,6 +443,7 @@ const char* getStateStr() {
         case PIDC_HOMING_END:      return "PIDC_HOMING_END";
         case PIDC_CALIBRATING:     return "PIDC_CALIBRATING";
         case PIDC_WAIT_READY:      return "PIDC_WAIT_READY";
+        case PIDC_PREPOSITIONING:  return "PIDC_PREPOSITIONING";
         case PIDC_READY:           return "PIDC_READY";
         case PIDC_RUNNING:         return "PIDC_RUNNING";
         case PIDC_STOPPED:         return "PIDC_STOPPED";
@@ -382,7 +453,7 @@ const char* getStateStr() {
 
 bool isActive() {
     return _state == PIDC_HOMING_START || _state == PIDC_HOMING_END
-        || _state == PIDC_RUNNING;
+        || _state == PIDC_PREPOSITIONING || _state == PIDC_RUNNING;
 }
 
 void onCommand(const char* topic, const char* payload) {
@@ -416,6 +487,7 @@ void onCommand(const char* topic, const char* payload) {
         _pendingPosSetpoint = _parseFloat(payload, "pos_setpoint", _posSetpoint);
         _pendingPosZonaSeg = _parseFloat(payload, "zona_seguridad", _posZonaSeg);
         _pendingThetaRefMax = _parseFloat(payload, "theta_ref_max", _thetaRefMax);
+        _pendingToleranciaPos = _parseFloat(payload, "tolerancia_pos", _toleranciaPos);
 
         // Parsear parámetros — lazo interno (ángulo)
         _pendingAngKp = _parseFloat(payload, "kp_ang", _angKp);
@@ -443,6 +515,8 @@ void onCommand(const char* topic, const char* payload) {
         if (_pendingPosSetpoint > maxSetpoint) _pendingPosSetpoint = maxSetpoint;
         if (_pendingThetaRefMax < MIN_THETA_REF_MAX) _pendingThetaRefMax = MIN_THETA_REF_MAX;
         if (_pendingThetaRefMax > MAX_THETA_REF_MAX) _pendingThetaRefMax = MAX_THETA_REF_MAX;
+        if (_pendingToleranciaPos < MIN_TOLERANCIA_POS) _pendingToleranciaPos = MIN_TOLERANCIA_POS;
+        if (_pendingToleranciaPos > MAX_TOLERANCIA_POS) _pendingToleranciaPos = MAX_TOLERANCIA_POS;
 
         // Validar y clampar — lazo ángulo
         if (_pendingAngKp < MIN_ANG_KP) _pendingAngKp = MIN_ANG_KP;
@@ -526,6 +600,7 @@ void loop() {
             _posSetpoint = _pendingPosSetpoint;
             _posZonaSeg = _pendingPosZonaSeg;
             _thetaRefMax = _pendingThetaRefMax;
+            _toleranciaPos = _pendingToleranciaPos;
             _angKp = _pendingAngKp;
             _angKi = _pendingAngKi;
             _angKd = _pendingAngKd;
@@ -534,15 +609,25 @@ void loop() {
             _pwmMin = _pendingPwmMin;
             _pwmMax = _pendingPwmMax;
 
-            Serial.printf("[pidcasc] Config Pos: Kp=%.3f Ki=%.4f Kd=%.3f SP=%.1fcm ZS=%.1fcm θmax=%.1f°\n",
-                _posKp, _posKi, _posKd, _posSetpoint, _posZonaSeg, _thetaRefMax);
+            Serial.printf("[pidcasc] Config Pos: Kp=%.3f Ki=%.4f Kd=%.3f SP=%.1fcm ZS=%.1fcm θmax=%.1f° TOL=%.2fcm\n",
+                _posKp, _posKi, _posKd, _posSetpoint, _posZonaSeg, _thetaRefMax, _toleranciaPos);
             Serial.printf("[pidcasc] Config Ang: Kp=%.2f Ki=%.3f Kd=%.3f RT=%.1f° TOL=%.1f°\n",
                 _angKp, _angKi, _angKd, _rangoTrabajo, _toleranciaAng);
             Serial.printf("[pidcasc] Config Motor: PWM=[%d,%d]\n", _pwmMin, _pwmMax);
         }
 
+        // En estado READY: auto-transición a RUNNING cuando péndulo entra en rango
+        if (_state == PIDC_READY) {
+            if (_cmdRun) _cmdRun = false;  // Consumir comando explícito si se envía
+            if (_inWorkingRange(angleActual, _rangoTrabajo)) {
+                LOG_PIDC("Péndulo en rango de trabajo (ángulo=%.1f°). Activando control cascada.\n", angleActual);
+                _resetAnglePidVariables();
+                _resetPositionPidVariables();
+                _changeState(PIDC_RUNNING);
+            }
+        }
         // Procesar comando home
-        if (_cmdHome) {
+        else if (_cmdHome) {
             _cmdHome = false;
             if (startActive) {
                 Serial.println("[pidcasc] Ya en home.");
@@ -566,7 +651,7 @@ void loop() {
                 _changeState(PIDC_HOMING_END);
             }
         }
-        // Procesar comando run
+        // Procesar comando run (solo en IDLE/STOPPED — inicia secuencia completa)
         else if (_cmdRun) {
             _cmdRun = false;
             Serial.println("[pidcasc] Iniciando secuencia: Homing → Calibración → Espera → Ready...");
@@ -576,20 +661,6 @@ void loop() {
             } else {
                 Motor::atras(HOMING_PWM);
                 _changeState(PIDC_HOMING_START);
-            }
-        }
-
-        // En estado READY: NO auto-transiciona (espera botón EJECUTAR explícito)
-        // El usuario debe enviar cmd:run desde READY para iniciar RUNNING
-        if (_state == PIDC_READY && _cmdRun) {
-            _cmdRun = false;
-            if (_inWorkingRange(angleActual, _rangoTrabajo)) {
-                LOG_PIDC("Péndulo en rango de trabajo (ángulo=%.1f°). Activando control cascada.\n", angleActual);
-                _resetAnglePidVariables();
-                _resetPositionPidVariables();
-                _changeState(PIDC_RUNNING);
-            } else {
-                LOG_PIDC("Péndulo FUERA de rango de trabajo (ángulo=%.1f°). Lleve el péndulo a vertical.\n", angleActual);
             }
         }
         break;
@@ -638,8 +709,66 @@ void loop() {
     case PIDC_WAIT_READY:
         // Esperar 2 segundos para estabilización
         if ((now - _stateEntry) > WAIT_READY_MS) {
-            Serial.println("[pidcasc] Estabilización completa. LISTO para control cascada.");
-            _changeState(PIDC_READY);
+            Serial.println("[pidcasc] Estabilización completa. Iniciando pre-posicionamiento...");
+            _resetPositionPidVariables();
+            _changeState(PIDC_PREPOSITIONING);
+        }
+        break;
+
+    case PIDC_PREPOSITIONING:
+        // Protección de límites físicos (direccional)
+        {
+            float posError = _posSetpoint - posActual;
+            bool blockedByStart = startActive && (posError < 0);
+            bool blockedByEnd   = endActive && (posError > 0);
+            if (blockedByStart || blockedByEnd) {
+                Motor::freno();
+                Serial.printf("[pidcasc] Pre-pos detenido: límite %s activo\n",
+                    blockedByStart ? "START" : "END");
+                _changeState(PIDC_STOPPED);
+                break;
+            }
+        }
+
+        // Zona de peligro (direccional)
+        if (posActual < _posZonaSeg || posActual > (TRACK_LENGTH_CM - _posZonaSeg)) {
+            float posError = _posSetpoint - posActual;
+            bool goingTowardLimit = (posActual < _posZonaSeg && posError < 0)
+                                 || (posActual > (TRACK_LENGTH_CM - _posZonaSeg) && posError > 0);
+            if (goingTowardLimit) {
+                Motor::freno();
+                Serial.printf("[pidcasc] Pre-pos: zona de peligro (pos=%.1f)\n", posActual);
+                _changeState(PIDC_STOPPED);
+                break;
+            }
+        }
+
+        // Ejecutar PID posición para mover al centro
+        {
+            bool inTolerance = _executePrepositionPid(posActual);
+
+            // Debug print rate-limited (~200ms)
+            if ((now - _lastPosDebugPrint) >= 200) {
+                _lastPosDebugPrint = now;
+                int pwmActual = Motor::getCurrentPWM();
+                const char* dir = (_posOutput > 0) ? "ADL" : (_posOutput < 0) ? "ATR" : "DET";
+                Serial.printf("[Debug PID Pos] pos=%.2f err=%.2f out=%.1f pwm=%d dir=%s\n",
+                    posActual, _posError, _posOutput, pwmActual, dir);
+            }
+
+            if (inTolerance) {
+                if (!_posWasInTolerance) {
+                    _posInToleranceTime = now;
+                    _posWasInTolerance = true;
+                }
+                if ((now - _posInToleranceTime) >= SETTLE_TIME_MS) {
+                    Motor::freno();
+                    LOG_PIDC("Pre-posicionamiento completado (pos=%.2f cm). Esperando péndulo vertical.\n", posActual);
+                    _changeState(PIDC_READY);
+                }
+            } else {
+                _posWasInTolerance = false;
+            }
         }
         break;
 
@@ -654,28 +783,23 @@ void loop() {
             break;
         }
 
-        // 2. Protección de límites físicos
-        if (startActive || endActive) {
-            Motor::freno();
-            _resetAnglePidVariables();
-            _resetPositionPidVariables();
-            Serial.printf("[pidcasc] Límite %s alcanzado. Motor detenido.\n",
-                startActive ? "START" : "END");
-            _changeState(PIDC_STOPPED);
-            break;
+        // 2. Protección de límites físicos (direccional)
+        //    Solo frena si el motor empuja HACIA el límite activo
+        {
+            bool blockedByStart = startActive && (_angOutput < 0);
+            bool blockedByEnd   = endActive && (_angOutput > 0);
+            if (blockedByStart || blockedByEnd) {
+                Motor::freno();
+                _resetAnglePidVariables();
+                _resetPositionPidVariables();
+                Serial.printf("[pidcasc] Control detenido: límite %s activo durante control cascada\n",
+                    blockedByStart ? "START" : "END");
+                _changeState(PIDC_STOPPED);
+                break;
+            }
         }
 
-        // 3. Verificar zona de seguridad de posición
-        if (posActual < _posZonaSeg || posActual > (TRACK_LENGTH_CM - _posZonaSeg)) {
-            Motor::freno();
-            _resetAnglePidVariables();
-            _resetPositionPidVariables();
-            Serial.printf("[pidcasc] Zona de seguridad (pos=%.1f cm). Motor detenido.\n", posActual);
-            _changeState(PIDC_STOPPED);
-            break;
-        }
-
-        // 4. Ejecutar control cascada
+        // 3. Ejecutar control cascada
         //    Lazo externo: PID posición → θ_ref
         _executePositionLoop(posActual);
         //    Lazo interno: PID ángulo con setpoint = θ_ref → PWM
@@ -720,6 +844,7 @@ float getAngKd()             { return _angKd; }
 
 float getRangoTrabajo()      { return _rangoTrabajo; }
 float getToleranciaAng()     { return _toleranciaAng; }
+float getToleranciaPos()     { return _toleranciaPos; }
 int   getPwmMin()            { return _pwmMin; }
 int   getPwmMax()            { return _pwmMax; }
 float getThetaRefMax()       { return _thetaRefMax; }

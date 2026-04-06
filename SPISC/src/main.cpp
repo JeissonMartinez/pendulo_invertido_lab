@@ -194,6 +194,7 @@ static void buildTelemetry(TelemetryPacket& pkt) {
     // Parámetros comunes
     pkt.pidc_rango_trabajo  = PidCascadaMode::getRangoTrabajo();
     pkt.pidc_tolerancia_ang = PidCascadaMode::getToleranciaAng();
+    pkt.pidc_tolerancia_pos = PidCascadaMode::getToleranciaPos();
     pkt.pidc_pwm_min       = PidCascadaMode::getPwmMin();
     pkt.pidc_pwm_max       = PidCascadaMode::getPwmMax();
     pkt.pidc_theta_ref_max = PidCascadaMode::getThetaRefMax();

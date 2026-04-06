@@ -80,6 +80,7 @@ float getAngKd();
 
 float getRangoTrabajo();
 float getToleranciaAng();
+float getToleranciaPos();
 int   getPwmMin();
 int   getPwmMax();
 float getThetaRefMax();

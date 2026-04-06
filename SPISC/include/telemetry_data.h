@@ -149,6 +149,7 @@ struct TelemetryPacket {
     // Control PID Cascada — Parámetros comunes
     float pidc_rango_trabajo;    // Rango de trabajo angular (grados)
     float pidc_tolerancia_ang;   // Tolerancia angular (grados)
+    float pidc_tolerancia_pos;   // Tolerancia posición (cm, zona muerta)
     int   pidc_pwm_min;          // PWM mínimo configurado
     int   pidc_pwm_max;          // PWM máximo configurado
     float pidc_theta_ref_max;    // Saturación del lazo externo (±grados)

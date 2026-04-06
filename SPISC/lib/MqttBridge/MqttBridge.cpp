@@ -30,7 +30,7 @@ bool MqttBridge::begin() {
     
     _mqttClient.setServer(MQTT_BROKER, MQTT_PORT);
     _mqttClient.setCallback(_staticCallback);
-    _mqttClient.setBufferSize(1024);
+    _mqttClient.setBufferSize(2048);  // Sobredimensionado para telemetría con pidc_* (~1400 bytes)
     _mqttClient.setKeepAlive(5);  // Keepalive MQTT cada 5 segundos (default: 15)
 
     _connectMqtt();

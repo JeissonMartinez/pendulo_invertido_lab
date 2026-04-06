@@ -231,6 +231,7 @@ export const usePendulumStore = defineStore('pendulum', () => {
     pos_setpoint: 45.0,
     zona_seguridad: 5.0,
     theta_ref_max: 2.0,
+    tolerancia_pos: 0.5,
     // Lazo interno (ángulo)
     kp_ang: 40.0,
     ki_ang: 1.0,
@@ -416,6 +417,7 @@ export const usePendulumStore = defineStore('pendulum', () => {
         if (norm.pidc_pos_setpoint > 0) pidCascState.value.pos_setpoint = norm.pidc_pos_setpoint
         if (norm.pidc_pos_zona_seg > 0) pidCascState.value.zona_seguridad = norm.pidc_pos_zona_seg
         if (norm.pidc_theta_ref_max > 0) pidCascState.value.theta_ref_max = norm.pidc_theta_ref_max
+        if (norm.pidc_tolerancia_pos >= 0) pidCascState.value.tolerancia_pos = norm.pidc_tolerancia_pos
         if (norm.pidc_ang_kp > 0) pidCascState.value.kp_ang = norm.pidc_ang_kp
         if (norm.pidc_ang_ki >= 0) pidCascState.value.ki_ang = norm.pidc_ang_ki
         if (norm.pidc_ang_kd >= 0) pidCascState.value.kd_ang = norm.pidc_ang_kd

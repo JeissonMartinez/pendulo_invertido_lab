@@ -226,6 +226,31 @@
                 />
                 <div class="param-range-labels"><span>0.5°</span><span>10°</span></div>
               </div>
+
+              <div class="pid-param">
+                <div class="param-header">
+                  <span class="param-label">Tolerancia Pos (cm)</span>
+                  <input
+                    type="number"
+                    class="param-input"
+                    v-model.number="toleranciaPosVal"
+                    min="0"
+                    max="5"
+                    step="0.1"
+                    :disabled="esPIDCActivo"
+                  />
+                </div>
+                <input
+                  type="range"
+                  class="param-slider"
+                  v-model.number="toleranciaPosVal"
+                  min="0"
+                  max="5"
+                  step="0.1"
+                  :disabled="esPIDCActivo"
+                />
+                <div class="param-range-labels"><span>0cm</span><span>5cm</span></div>
+              </div>
             </div>
           </div>
 
@@ -611,6 +636,7 @@ const kdPosVal = ref(store.pidCascState.kd_pos)
 const posSetpointVal = ref(store.pidCascState.pos_setpoint)
 const zonaSeguridadVal = ref(store.pidCascState.zona_seguridad)
 const thetaRefMaxVal = ref(store.pidCascState.theta_ref_max)
+const toleranciaPosVal = ref(store.pidCascState.tolerancia_pos)
 
 // Valores locales — Lazo interno (Ángulo)
 const kpAngVal = ref(store.pidCascState.kp_ang)
@@ -657,6 +683,7 @@ const PIDC_STATE_TEXT = {
   PIDC_HOMING_END: '← HOMING',
   PIDC_CALIBRATING: 'CALIBRANDO',
   PIDC_WAIT_READY: 'ESPERANDO...',
+  PIDC_PREPOSITIONING: 'PRE-POSICIONANDO',
   PIDC_READY: 'LISTO',
   PIDC_RUNNING: 'CONTROLANDO',
   PIDC_STOPPED: 'DETENIDO',
@@ -674,6 +701,7 @@ const claseBadgePidcState = computed(() => {
     PIDC_HOMING_END: 'badge-calibrando',
     PIDC_CALIBRATING: 'badge-calibrando',
     PIDC_WAIT_READY: 'badge-calibrando',
+    PIDC_PREPOSITIONING: 'badge-calibrando',
     PIDC_READY: 'badge-listo',
     PIDC_RUNNING: 'badge-controlando',
     PIDC_STOPPED: 'badge-detenido',
@@ -710,6 +738,7 @@ function enviarConfiguracion() {
     pos_setpoint: posSetpointVal.value,
     zona_seguridad: zonaSeguridadVal.value,
     theta_ref_max: thetaRefMaxVal.value,
+    tolerancia_pos: toleranciaPosVal.value,
     kp_ang: kpAngVal.value,
     ki_ang: kiAngVal.value,
     kd_ang: kdAngVal.value,

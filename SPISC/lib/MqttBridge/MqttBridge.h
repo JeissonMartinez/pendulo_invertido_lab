@@ -56,7 +56,7 @@ private:
     unsigned long _lastReconnectAttempt;
     unsigned long _reconnectInterval;
 
-    static constexpr uint8_t MAX_SUBS = 10;
+    static constexpr uint8_t MAX_SUBS = 16;
     const char* _subTopics[MAX_SUBS];
     uint8_t     _subCount;
 

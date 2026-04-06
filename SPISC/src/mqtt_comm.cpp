@@ -114,7 +114,7 @@ void publishTelemetry(const TelemetryPacket& p) {
         "\"pidc_ang_output\":%.1f,\"pidc_ang_output_sat\":%.1f,"
         "\"pidc_ang_setpoint\":%.3f,\"pidc_ang_kp\":%.2f,\"pidc_ang_ki\":%.3f,\"pidc_ang_kd\":%.3f,"
         // Control PID Cascada - parámetros comunes
-        "\"pidc_rango_trabajo\":%.1f,\"pidc_tolerancia_ang\":%.1f,"
+        "\"pidc_rango_trabajo\":%.1f,\"pidc_tolerancia_ang\":%.1f,\"pidc_tolerancia_pos\":%.2f,"
         "\"pidc_pwm_min\":%d,\"pidc_pwm_max\":%d,\"pidc_theta_ref_max\":%.2f,"
         // Mantener campos de compatibilidad con frontend actual
         "\"angle\":%.2f,\"position\":%.2f,\"cart_accel\":%.3f,\"rpm\":%.1f,"
@@ -153,7 +153,7 @@ void publishTelemetry(const TelemetryPacket& p) {
         p.pidc_ang_output, p.pidc_ang_output_sat,
         p.pidc_ang_setpoint, p.pidc_ang_kp, p.pidc_ang_ki, p.pidc_ang_kd,
         // PID Cascada - parámetros comunes
-        p.pidc_rango_trabajo, p.pidc_tolerancia_ang,
+        p.pidc_rango_trabajo, p.pidc_tolerancia_ang, p.pidc_tolerancia_pos,
         p.pidc_pwm_min, p.pidc_pwm_max, p.pidc_theta_ref_max,
         // Compatibilidad: angle=angle_pend, position=pos_mag_cm, cart_accel=mpu_ax, rpm=rpm_ir
         p.angle_pend, p.pos_mag_cm, p.mpu_ax, p.rpm_ir,
@@ -186,7 +186,7 @@ void publishTelemetryFast(const TelemetryPacket& p) {
         "\"pidc_ang_error\":%.3f,\"pidc_ang_output\":%.1f,\"pidc_ang_output_sat\":%.1f,"
         "\"pidc_ang_setpoint\":%.3f,\"pidc_ang_integral\":%.3f,\"pidc_ang_derivada\":%.3f,"
         "\"pidc_ang_kp\":%.2f,\"pidc_ang_ki\":%.3f,\"pidc_ang_kd\":%.3f,"
-        "\"pidc_rango_trabajo\":%.1f,\"pidc_tolerancia_ang\":%.1f,"
+        "\"pidc_rango_trabajo\":%.1f,\"pidc_tolerancia_ang\":%.1f,\"pidc_tolerancia_pos\":%.2f,"
         "\"pidc_pwm_min\":%d,\"pidc_pwm_max\":%d,\"pidc_theta_ref_max\":%.2f,"
         "\"pidc_pos_kp\":%.3f,\"pidc_pos_ki\":%.4f,\"pidc_pos_kd\":%.3f,"
         "\"pidc_pos_zona_seg\":%.1f"
@@ -212,7 +212,7 @@ void publishTelemetryFast(const TelemetryPacket& p) {
         p.pidc_ang_error, p.pidc_ang_output, p.pidc_ang_output_sat,
         p.pidc_ang_setpoint, p.pidc_ang_integral, p.pidc_ang_derivada,
         p.pidc_ang_kp, p.pidc_ang_ki, p.pidc_ang_kd,
-        p.pidc_rango_trabajo, p.pidc_tolerancia_ang,
+        p.pidc_rango_trabajo, p.pidc_tolerancia_ang, p.pidc_tolerancia_pos,
         p.pidc_pwm_min, p.pidc_pwm_max, p.pidc_theta_ref_max,
         p.pidc_pos_kp, p.pidc_pos_ki, p.pidc_pos_kd,
         p.pidc_pos_zona_seg
