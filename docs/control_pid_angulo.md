@@ -2,7 +2,7 @@
 
 **Proyecto:** [SPISC — Sistema de Péndulo Invertido con Supervisión y Control](../README.md)  
 **Fecha:** 04/04/2026  
-**Última actualización:** 06/04/2026 (v1.1 — segundo test hardware)  
+**Última actualización:** 06/04/2026 (v1.2 — bias de motor + re-tuning de ganancias)  
 **Autor:** Ing. Jeisson Martínez Flórez
 
 ---
@@ -17,6 +17,7 @@
 - [Algoritmo PID](#algoritmo-pid)
 - [Rango de trabajo y convención angular](#rango-de-trabajo-y-convención-angular)
 - [Telemetría](#telemetría)
+- [Comunicación MQTT](#comunicación-mqtt)
 - [Guía de uso](#guía-de-uso)
 - [Troubleshooting](#troubleshooting)
 - [Estado actual del sistema](#estado-actual-del-sistema)
@@ -69,11 +70,12 @@ El modo **Control PID de Ángulo** (`MODE_PID_ANG`) implementa un controlador PI
 | **Rango angular** | 0° - 360° | Fijo |
 | **Setpoint angular** | 0° (vertical arriba) | Fijo |
 | **Rango de trabajo** | ±20° | [5°, 30°] |
-| **Tolerancia angular** | 2° | [1°, 10°] |
-| **PWM mínimo** | 300 | [100, 500] |
-| **PWM máximo** | 700 | [300, 1023] |
+| **Tolerancia angular** | 0.1° | [0°, 5°] |
+| **PWM mínimo** | 250 | [100, 500] |
+| **PWM máximo** | 900 | [300, 1023] |
 | **Anti-windup** | Saturación de integral ±500 | Fijo |
 | **Filtro derivativo** | Pasa-bajos α = 0.2 | Fijo |
+| **Motor bias** | 300 PWM (zona muerta) | Fijo |
 | **Pos. pre-posicionamiento** | 45 cm (centro riel) | Fijo |
 | **Telemetría (PID activo)** | ~14-17 Hz (fast) | Fijo 50ms target |
 | **Telemetría (reposo)** | 5 Hz (normal) | Fijo 200ms |
@@ -206,7 +208,7 @@ namespace PidAnguloMode {
 | `PIDA_HOMING_START` | Motor retrocediendo (PWM 300) hasta LS_START. Timeout: 30s. |
 | `PIDA_HOMING_END` | Motor avanzando (PWM 300) hasta LS_END. Timeout: 30s. |
 | `PIDA_CALIBRATING` | Pausa breve (200ms) para estabilización de sensores post-homing. Auto-calibración de posición a 0 cm via main.cpp. |
-| `PIDA_PREPOSITIONING` | PID de posición interno mueve carro a 45 cm (centro del riel). Tolerancia 1 cm, settle time 500ms. |
+| `PIDA_PREPOSITIONING` | PID de posición interno mueve carro a 45 cm (centro del riel). Tolerancia 0.5 cm, settle time 500ms. |
 | `PIDA_READY` | Esperando que el usuario levante el péndulo al rango de trabajo. **Auto-transiciona a RUNNING** cuando el ángulo del péndulo entra en la banda definida por `rango_trabajo`. |
 | `PIDA_RUNNING` | Control PID de ángulo activo a 1000 Hz. Telemetría rápida activada. Si el péndulo sale del rango de trabajo → freno + reposicionamiento. |
 | `PIDA_REPOSITIONING` | Péndulo fuera de rango → PID posición interno reposiciona carro a 45 cm → vuelve a READY. |
@@ -247,13 +249,13 @@ cmd:run → HOMING_START → LS_START → CALIBRATING (200ms)
 ```json
 {
   "action": "config",
-  "kp": 2.0,
-  "ki": 0.05,
-  "kd": 0.3,
-  "rango_trabajo": 10,
-  "tolerancia": 2,
-  "pwm_min": 200,
-  "pwm_max": 700
+  "kp": 40.0,
+  "ki": 1.0,
+  "kd": 0.5,
+  "rango_trabajo": 20,
+  "tolerancia": 0.1,
+  "pwm_min": 250,
+  "pwm_max": 900
 }
 ```
 
@@ -278,19 +280,19 @@ cmd:run → HOMING_START → LS_START → CALIBRATING (200ms)
 
 | Parámetro | Default | Rango | Unidad | Descripción |
 |-----------|---------|-------|--------|-------------|
-| `kp` | 19.0 | [0.1, 50.0] | - | Ganancia proporcional |
-| `ki` | 0.0 | [0.0, 10.0] | - | Ganancia integral |
-| `kd` | 0.0 | [0.0, 5.0] | - | Ganancia derivativa |
+| `kp` | 40.0 | [0.1, 100.0] | - | Ganancia proporcional |
+| `ki` | 1.0 | [0.0, 50.0] | - | Ganancia integral |
+| `kd` | 0.5 | [0.0, 10.0] | - | Ganancia derivativa |
 | `rango_trabajo` | 20.0 | [5.0, 30.0] | ° | Banda angular desde 0° para activar/desactivar PID |
-| `tolerancia` | 2.0 | [1.0, 10.0] | ° | Zona muerta angular (freno si \|error\| < tolerancia) |
-| `pwm_min` | 300 | [100, 500] | - | PWM mínimo aplicado al motor |
-| `pwm_max` | 700 | [300, 1023] | - | PWM máximo aplicado al motor |
+| `tolerancia` | 0.1 | [0.0, 5.0] | ° | Zona muerta angular (freno si \|error\| < tolerancia) |
+| `pwm_min` | 250 | [100, 500] | - | PWM mínimo aplicado al motor |
+| `pwm_max` | 900 | [300, 1023] | - | PWM máximo aplicado al motor |
 
 ### Validación de parámetros
 
 Los parámetros se validan al recibirse por MQTT:
 - Se clampean al rango válido (no se rechazan)
-- Si `pwm_min >= pwm_max`, ambos se resetean a valores por defecto (300, 700)
+- Si `pwm_min >= pwm_max`, ambos se resetean a valores por defecto (250, 900)
 - Los parámetros se aplican inmediatamente solo en estados no-activos (IDLE, READY, STOPPED)
 
 ### Parámetros fijos del PID posición interno
@@ -299,11 +301,11 @@ El PID de posición interno (para pre-posicionamiento y reposicionamiento) usa p
 
 | Parámetro | Valor | Descripción |
 |-----------|-------|-------------|
-| Kp | 25.0 | Ganancia proporcional |
-| Ki | 3.5 | Ganancia integral |
-| Kd | 1.2 | Ganancia derivativa |
+| Kp | 6.0 | Ganancia proporcional |
+| Ki | 1.5 | Ganancia integral |
+| Kd | 0.0 | Ganancia derivativa |
 | Setpoint | 45.0 cm | Centro del riel |
-| Tolerancia | 1.0 cm | Error aceptable |
+| Tolerancia | 0.5 cm | Error aceptable |
 | Zona seguridad | 5.0 cm | Distancia segura desde límites |
 | Settle time | 500 ms | Tiempo en tolerancia para confirmar llegada |
 | PWM rango | [300, 700] | Rango del actuador |
@@ -342,18 +344,24 @@ if (integral > INTEGRAL_MAX) integral = INTEGRAL_MAX;    // +500
 if (integral < -INTEGRAL_MAX) integral = -INTEGRAL_MAX;  // -500
 ```
 
-#### Aplicación al motor
+#### Aplicación al motor (con bias de zona muerta)
 
 ```cpp
 if (|error| <= tolerancia) {
     Motor::freno();                    // Zona muerta angular
     outputSaturated = 0;
 } else {
-    pwm = clamp(|output|, pwm_min, pwm_max);
+    pwm = |output| + MOTOR_BIAS;       // Bias = 300 (zona muerta del motor)
+    pwm = min(pwm, pwm_max);           // Saturar al máximo
     if (output > 0) Motor::adelante(pwm);
     else            Motor::atras(pwm);
     outputSaturated = ±pwm;            // Con signo de dirección
 }
+```
+
+> **Nota:** El `MOTOR_BIAS` (300 PWM) se suma a la salida PID para garantizar que el motor
+> siempre supere la zona muerta mecánica. Esto reemplaza el anterior clamp `pwm_min` y
+> proporciona una respuesta lineal: una salida PID de 1 produce PWM=301, de 100 produce PWM=400.
 ```
 
 ### Diagrama de bloques
@@ -543,18 +551,100 @@ Estos campos se incluyen en `pendulum/telemetry` cuando el modo activo es `MODE_
   "pida_output": 350.0,
   "pida_output_sat": 350.0,
   "pida_setpoint": 0.0,
-  "pida_kp": 2.0,
-  "pida_ki": 0.05,
-  "pida_kd": 0.3,
-  "pida_rango_trabajo": 10.0,
-  "pida_tolerancia": 2.0,
-  "pida_pwm_min": 200,
-  "pida_pwm_max": 700,
+  "pida_kp": 40.0,
+  "pida_ki": 1.0,
+  "pida_kd": 0.5,
+  "pida_rango_trabajo": 20.0,
+  "pida_tolerancia": 0.1,
+  "pida_pwm_min": 250,
+  "pida_pwm_max": 900,
   "pida_pos_setpoint": 45.0,
   "ls_start": false,
   "ls_end": false
 }
 ```
+
+---
+
+## Comunicación MQTT
+
+El sistema intercambia datos entre el firmware (ESP32) y la HMI (Backend + Frontend) a través de un broker MQTT (Mosquitto). Toda la telemetría, comandos y señales de estado viajan por este canal.
+
+### Flujo de datos
+
+```
+┌────────────┐     ┌───────────┐     ┌────────────┐     ┌────────────┐
+│   ESP32    │─MQTT─►           │─MQTT─►            │─ WS ─►            │
+│  Firmware  │     │ Mosquitto │     │  Backend   │     │ Frontend   │
+│  (SPISC)   │◄────│  :1883    │◄────│  :8000     │◄────│  :5173     │
+└────────────┘     └───────────┘     └────────────┘     └────────────┘
+     WiFi              TCP             HTTP/WS          Navegador
+```
+
+- **ESP32 → Backend:** El firmware publica telemetría y estado por MQTT. El backend (aiomqtt) recibe todos los tópicos con suscripción wildcard `pendulum/#` y reenvía los datos al frontend vía WebSocket.
+- **Frontend → ESP32:** El usuario interactúa con la HMI en el navegador. Los comandos viajan por WebSocket al backend, que los traduce a un `publish` MQTT hacia el tópico correspondiente. El firmware los recibe en Core 1 y los encola en una cola FreeRTOS (máx. 10) para que Core 0 los procese.
+
+### Tópicos de datos (ESP32 → Backend)
+
+Estos tópicos son publicados por el firmware y recibidos por el backend.
+
+| Tópico | Frecuencia | Payload aprox. | Contenido |
+|--------|-----------|----------------|----------|
+| `pendulum/telemetry` | **5 Hz** (normal) / **20 Hz** (PID activo) | ~500 B / ~150 B | Posición (IR+MAG), RPM, ángulo péndulo, vel. angular, PWM, dirección, IMU, limit switches, campos `pid_*` y `pida_*` |
+| `pendulum/status` | **2 Hz** | ~200 B | Estado del sistema, modo activo, LS inicio/fin, WiFi RSSI, flags de calibración |
+| `pendulum/limits` | **Evento** (solo al cambiar) | ~30 B | Estado de limit switches: `inicio`, `fin` (bool) |
+| `pendulum/sweep/results` | **Evento** (fin de barrido) | Variable | Resultados del barrido PWM |
+
+### Tópicos de comando (Backend → ESP32)
+
+Estos tópicos son publicados por el backend cuando el usuario envía un comando desde la HMI.
+
+| Tópico | Cuándo se envía | Payload principal |
+|--------|----------------|-------------------|
+| `pendulum/cmd/motor` | Control manual del motor | `action`, `pwm`, `direction` |
+| `pendulum/cmd/mode` | Cambio de modo de operación | `mode` (MANUAL, PID_POS, PID_ANG, OPEN_LOOP, …) |
+| `pendulum/cmd/calibrate` | Botón de calibración | `type` (angle, position, mpu, full) |
+| `pendulum/cmd/config` | Ajuste de parámetro en tiempo real | `param`, `value` |
+| `pendulum/cmd/stop` | Parada de emergencia (global) | `{}` (vacío) |
+| `pendulum/cmd/sweep` | Control de barrido PWM | `action` (start, stop, reiniciar) |
+| `pendulum/cmd/openloop` | Modo lazo abierto | `action`, `pwm`, `duration` |
+| `pendulum/cmd/pidpos` | Modo PID posición | `action`, `kp/ki/kd`, `setpoint`, `sensor`, … |
+| `pendulum/cmd/pidang` | Modo PID ángulo | `action`, `kp/ki/kd`, `rango_trabajo`, `tolerancia`, … |
+| `pendulum/cmd/debug` | Diagnóstico (reservado) | — |
+| `pendulum/time` | **Automático cada 10 s** | `ts` (epoch ms) — sincronización de reloj |
+
+### Parámetros técnicos clave
+
+| Parámetro | Valor | Qué significa |
+|-----------|-------|---------------|
+| **Buffer MQTT (PubSubClient)** | 1024 bytes | Tamaño máximo de un mensaje MQTT que el ESP32 puede enviar o recibir. Si un JSON supera este tamaño, se trunca y se pierde. |
+| **Buffer JSON (serialización)** | 1280 bytes | Espacio reservado en memoria del ESP32 para armar el string JSON antes de publicarlo. Es mayor que el buffer MQTT para dejar margen de seguridad. |
+| **QoS** | 0 (fire-and-forget) | Nivel de garantía de entrega MQTT. QoS 0 significa que el mensaje se envía una sola vez sin confirmación. Si se pierde por WiFi inestable, no se reintenta. Es el más rápido. |
+| **Mensajes retenidos** | Ninguno | El broker no almacena el último mensaje de ningún tópico. Si un cliente se conecta tarde, no recibe datos anteriores. |
+| **Keep-alive MQTT** | 5 s | Cada 5 segundos el ESP32 envía un ping al broker para confirmar que sigue vivo. Si el broker no recibe ping en 1.5× este valor (7.5 s), cierra la conexión. |
+| **TCP NoDelay** | Activado | Desactiva el algoritmo de Nagle en el socket TCP. Sin esto, el sistema operativo esperaría ~40 ms acumulando datos antes de enviarlos, agregando latencia innecesaria. |
+| **Safety timeout MQTT** | 10 s | Si el ESP32 no recibe **ningún** mensaje MQTT durante 10 segundos, frena el motor automáticamente como medida de seguridad. Evita que el motor siga girando si la conexión se pierde. |
+| **Cola de comandos** | Máx. 10 | Los comandos recibidos por MQTT en Core 1 se encolan en una cola FreeRTOS. Core 0 los procesa uno por uno. Si llegan más de 10 sin procesar, los nuevos se descartan. |
+| **Reconexión MQTT** | Backoff exponencial: 500 ms → 5 s | Si el ESP32 pierde conexión con el broker, reintenta conectarse esperando 500 ms, luego 1 s, 2 s, hasta un máximo de 5 s entre intentos. |
+| **Ancho de banda pico** | ~22 msgs/s ≈ 9 KB/s | Durante PID activo (20 Hz telemetría + 2 Hz status) se generan ~22 mensajes por segundo, consumiendo aproximadamente 9 KB/s de ancho de banda WiFi. |
+
+### Telemetría por estado
+
+La frecuencia de telemetría depende del estado actual de la máquina de estados. Los estados con motor en movimiento usan telemetría rápida (20 Hz) y el resto usa normal (5 Hz).
+
+| Estado | Motor activo | Telemetría | Frecuencia |
+|--------|:------------:|-----------|:----------:|
+| `PIDA_IDLE` | No | Normal | 5 Hz |
+| `PIDA_CALIBRATING` | No | Normal | 5 Hz |
+| `PIDA_HOMING_START` | Sí | Fast | 20 Hz |
+| `PIDA_HOMING_END` | Sí | Fast | 20 Hz |
+| `PIDA_PREPOSITIONING` | Sí | Fast | 20 Hz |
+| `PIDA_READY` | No | Normal | 5 Hz |
+| `PIDA_RUNNING` | Sí | Fast | 20 Hz |
+| `PIDA_REPOSITIONING` | Sí | Fast | 20 Hz |
+| `PIDA_STOPPED` | No | Normal | 5 Hz |
+
+La selección se hace en `main.cpp` con la función `PidAnguloMode::isActive()`, que retorna `true` para los 5 estados con motor activo.
 
 ---
 
@@ -623,7 +713,7 @@ mosquitto_pub -h 192.168.4.2 -t "pendulum/cmd/mode" \
 
 # 2. Configurar parámetros PID
 mosquitto_pub -h 192.168.4.2 -t "pendulum/cmd/pidang" \
-  -m '{"action":"config","kp":3.0,"ki":0.1,"kd":0.5,"rango_trabajo":12,"tolerancia":2}'
+  -m '{"action":"config","kp":40.0,"ki":1.0,"kd":0.5,"rango_trabajo":20,"tolerancia":0.1}'
 
 # 3. Iniciar secuencia completa (homing → calibración → pre-pos → ready)
 mosquitto_pub -h 192.168.4.2 -t "pendulum/cmd/pidang" \

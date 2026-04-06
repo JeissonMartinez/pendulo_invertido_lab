@@ -332,11 +332,23 @@ function destruirPlot(id) {
 }
 
 // ── Actualización de datos ───────────────────
-let updateTimer = null
+let rafId = null
+let _lastLen = 0
+
+function solicitarActualizacion() {
+  if (rafId) return
+  rafId = requestAnimationFrame(() => {
+    rafId = null
+    actualizarGraficos()
+  })
+}
 
 function actualizarGraficos() {
   const h = store.historial
-  if (h.ts.length === 0) return
+  const len = h.ts.length
+  if (len === 0) return
+  if (len === _lastLen) return   // sin datos nuevos → skip
+  _lastLen = len
 
   // Aplicar ventana de tiempo
   let startIdx = 0
@@ -403,12 +415,12 @@ function desobservarCanvas(id) {
 
 onMounted(() => {
   resizeObserver = new ResizeObserver(manejarResize)
-  // Timer de actualización: ~10 Hz (suficiente para gráficos)
-  updateTimer = setInterval(actualizarGraficos, 100)
+  // Solicitar redibujado cuando el historial cambia
+  watch(() => store.historial.ts.length, solicitarActualizacion)
 })
 
 onUnmounted(() => {
-  if (updateTimer) clearInterval(updateTimer)
+  if (rafId) cancelAnimationFrame(rafId)
   if (resizeTimer) clearTimeout(resizeTimer)
   if (resizeObserver) {
     resizeObserver.disconnect()

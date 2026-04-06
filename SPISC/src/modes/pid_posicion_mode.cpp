@@ -48,12 +48,12 @@ enum PidState {
 // ══════════════════════════════════════════════════
 // Constantes de control
 // ══════════════════════════════════════════════════
-static const float DEFAULT_KP           = 8.0f;    // Ganancia proporcional
-static const float DEFAULT_KI           = 0.1f;    // Ganancia integral
-static const float DEFAULT_KD           = 0.5f;    // Ganancia derivativa
+static const float DEFAULT_KP           = 6.0f;    // Ganancia proporcional
+static const float DEFAULT_KI           = 1.5f;    // Ganancia integral
+static const float DEFAULT_KD           = 0.0f;    // Ganancia derivativa
 static const float DEFAULT_SETPOINT     = 45.0f;   // Centro del riel (cm)
 static const float DEFAULT_ZONA_SEG     = 5.0f;    // Zona de seguridad (cm)
-static const float DEFAULT_TOLERANCIA   = 1.0f;    // Tolerancia de llegada (cm)
+static const float DEFAULT_TOLERANCIA   = 0.5f;    // Tolerancia de llegada (cm)
 
 static const float MIN_KP = 0.1f,  MAX_KP = 50.0f;
 static const float MIN_KI = 0.0f,  MAX_KI = 10.0f;
@@ -64,7 +64,7 @@ static const float MIN_TOLERANCIA = 0.5f, MAX_TOLERANCIA = 5.0f;
 static const float INTEGRAL_MAX = 500.0f;   // Anti-windup: límite de integral
 
 // Rangos para PWM configurable
-static const int   DEFAULT_PWM_MIN = 200;   // PWM mínimo por defecto
+static const int   DEFAULT_PWM_MIN = 300;   // PWM mínimo por defecto
 static const int   DEFAULT_PWM_MAX = 700;   // PWM máximo por defecto
 static const int   ABS_MIN_PWM = 100;       // Límite absoluto mínimo
 static const int   ABS_MAX_PWM = 1023;      // Límite absoluto máximo
@@ -234,11 +234,8 @@ static bool _executePidControl(float posActual) {
         Motor::freno();
         _outputSaturated = 0.0f;
     } else {
-        // Fuera de tolerancia: aplicar PWM
-        int pwm = (int)fabsf(_output);
-        
-        // Saturar PWM con límites configurables
-        if (pwm < _pwmMin) pwm = _pwmMin;
+        // Fuera de tolerancia: aplicar PWM con bias de zona muerta
+        int pwm = (int)fabsf(_output) + MOTOR_BIAS;
         if (pwm > _pwmMax) pwm = _pwmMax;
         
         // Guardar salida saturada (con signo para indicar dirección)

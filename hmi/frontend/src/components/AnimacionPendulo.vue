@@ -219,18 +219,36 @@ const marcas = [0, 10, 20, 30, 45, 60, 70, 80, 90].map(cm => ({
 }))
 
 // ── Interpolación suave ──────────────────────
-const interpolAngle = ref(0)
+const interpolAngle = ref(0)        // ángulo acumulado interpolado (para dibujo)
+const interpolAngleDisplay = ref(0) // ángulo real interpolado (para indicador numérico)
 const interpolPos = ref(45.0)
 let animFrameId = null
+
+// Ángulo acumulado (unwrap) para evitar que el dibujo "se devuelva" en 360→0
+const anguloAcumulado = ref(0)
+let prevRawAngle = null
 
 function lerp(a, b, t) {
   return a + (b - a) * t
 }
 
 function animLoop() {
+  // Actualizar ángulo acumulado (unwrap: detecta saltos >180° y acumula)
+  const rawAngle = store.telemetria.angle
+  if (prevRawAngle === null) {
+    anguloAcumulado.value = rawAngle
+  } else {
+    let diff = rawAngle - prevRawAngle
+    if (diff > 180) diff -= 360
+    if (diff < -180) diff += 360
+    anguloAcumulado.value += diff
+  }
+  prevRawAngle = rawAngle
+
   // Interpolar hacia el valor real (~suavizado exponencial)
   const t = 0.25  // factor de suavizado (más alto = más rápido)
-  interpolAngle.value = lerp(interpolAngle.value, store.telemetria.angle, t)
+  interpolAngle.value = lerp(interpolAngle.value, anguloAcumulado.value, t)
+  interpolAngleDisplay.value = lerp(interpolAngleDisplay.value, rawAngle, t)
   interpolPos.value = lerp(interpolPos.value, store.telemetria.pos_ir_cm, t)
   animFrameId = requestAnimationFrame(animLoop)
 }
@@ -267,6 +285,6 @@ const penduloPuntaY = computed(() => {
 })
 
 // ── Display formateado ───────────────────────
-const anguloDisplay = computed(() => interpolAngle.value.toFixed(1))
+const anguloDisplay = computed(() => interpolAngleDisplay.value.toFixed(1))
 const posicionDisplay = computed(() => interpolPos.value.toFixed(1))
 </script>

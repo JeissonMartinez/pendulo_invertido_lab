@@ -155,14 +155,14 @@ export const usePendulumStore = defineStore('pendulum', () => {
   // ── Estado PID Posición ──────────────────────
   const pidPosState = ref({
     status: 'PID_IDLE',
-    kp: 8.0,
-    ki: 0.1,
-    kd: 0.5,
+    kp: 6.0,
+    ki: 1.5,
+    kd: 0.0,
     setpoint: 45.0,
     zona_seguridad: 5.0,
-    tolerancia: 1.0,
+    tolerancia: 0.5,
     sensor: 'mag',
-    pwm_min: 200,
+    pwm_min: 300,
     pwm_max: 700,
   })
   const pidPosResults = ref([])
@@ -170,13 +170,13 @@ export const usePendulumStore = defineStore('pendulum', () => {
   // ── Estado PID Ángulo ────────────────────────
   const pidAngState = ref({
     status: 'PIDA_IDLE',
-    kp: 2.0,
-    ki: 0.05,
-    kd: 0.3,
-    rango_trabajo: 10.0,
-    tolerancia: 2.0,
-    pwm_min: 200,
-    pwm_max: 700,
+    kp: 40.0,
+    ki: 1.0,
+    kd: 0.5,
+    rango_trabajo: 20.0,
+    tolerancia: 0.1,
+    pwm_min: 250,
+    pwm_max: 900,
   })
   const pidAngResults = ref([])
 

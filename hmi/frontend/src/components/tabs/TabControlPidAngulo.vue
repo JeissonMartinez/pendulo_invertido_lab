@@ -190,9 +190,9 @@
                     type="number"
                     class="param-input"
                     v-model.number="toleranciaVal"
-                    min="1"
-                    max="10"
-                    step="0.5"
+                    min="0"
+                    max="5"
+                    step="0.1"
                     :disabled="esPIDAActivo"
                   />
                 </div>
@@ -200,9 +200,9 @@
                   type="range"
                   class="param-slider"
                   v-model.number="toleranciaVal"
-                  min="1"
-                  max="10"
-                  step="0.5"
+                  min="0"
+                  max="5"
+                  step="0.1"
                   :disabled="esPIDAActivo"
                 />
                 <div class="param-range-labels"><span>1°</span><span>10°</span></div>

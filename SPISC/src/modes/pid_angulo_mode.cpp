@@ -57,24 +57,24 @@ enum PidaState {
 // ══════════════════════════════════════════════════
 // Constantes — PID Ángulo
 // ══════════════════════════════════════════════════
-static const float DEFAULT_KP             = 19.0f;
-static const float DEFAULT_KI             = 0.0f;
-static const float DEFAULT_KD             = 0.0f;
+static const float DEFAULT_KP             = 40.0f;
+static const float DEFAULT_KI             = 1.0f;
+static const float DEFAULT_KD             = 0.5f;
 static const float DEFAULT_RANGO_TRABAJO  = 20.0f;   // grados desde vertical
-static const float DEFAULT_TOLERANCIA     = 2.0f;     // grados
+static const float DEFAULT_TOLERANCIA     = 0.1f;     // grados
 
-static const float MIN_KP = 0.1f,  MAX_KP = 50.0f;
-static const float MIN_KI = 0.0f,  MAX_KI = 10.0f;
-static const float MIN_KD = 0.0f,  MAX_KD = 5.0f;
+static const float MIN_KP = 0.1f,  MAX_KP = 100.0f;
+static const float MIN_KI = 0.0f,  MAX_KI = 50.0f;
+static const float MIN_KD = 0.0f,  MAX_KD = 10.0f;
 static const float MIN_RANGO_TRABAJO = 5.0f,  MAX_RANGO_TRABAJO = 30.0f;
-static const float MIN_TOLERANCIA = 1.0f,  MAX_TOLERANCIA = 10.0f;
+static const float MIN_TOLERANCIA = 0.0f,  MAX_TOLERANCIA = 5.0f;
 
 static const float INTEGRAL_MAX = 500.0f;           // Anti-windup
 static const float DERIV_FILTER_ALPHA = 0.2f;       // Filtro pasa-bajos derivativo
 
 // Rangos PWM configurables
-static const int   DEFAULT_PWM_MIN = 300;
-static const int   DEFAULT_PWM_MAX = 700;
+static const int   DEFAULT_PWM_MIN = 250;
+static const int   DEFAULT_PWM_MAX = 900;
 static const int   ABS_MIN_PWM = 100;
 static const int   ABS_MAX_PWM = 1023;
 
@@ -82,10 +82,10 @@ static const int   ABS_MAX_PWM = 1023;
 // Constantes — PID Posición interno (pre-posicionamiento)
 // ══════════════════════════════════════════════════
 static const float POS_SETPOINT        = 45.0f;    // Centro del riel (cm)
-static const float POS_KP              = 25.0f;
-static const float POS_KI              = 3.5f;
-static const float POS_KD              = 1.2f;
-static const float POS_TOLERANCIA      = 1.0f;     // cm
+static const float POS_KP              = 6.0f;
+static const float POS_KI              = 1.5f;
+static const float POS_KD              = 0.0f;
+static const float POS_TOLERANCIA      = 0.5f;     // cm
 static const float POS_ZONA_SEG        = 5.0f;     // cm desde cada extremo
 static const float POS_INTEGRAL_MAX    = 500.0f;
 static const int   POS_PWM_MIN         = 300;
@@ -271,8 +271,7 @@ static void _executeAnglePidControl(float angleActual) {
         Motor::freno();
         _outputSaturated = 0.0f;
     } else {
-        int pwm = (int)fabsf(_output);
-        if (pwm < _pwmMin) pwm = _pwmMin;
+        int pwm = (int)fabsf(_output) + MOTOR_BIAS;
         if (pwm > _pwmMax) pwm = _pwmMax;
 
         _outputSaturated = (_output > 0) ? (float)pwm : -(float)pwm;
@@ -321,8 +320,7 @@ static bool _executePositionPidControl(float posActual) {
     if (inTolerance) {
         Motor::freno();
     } else {
-        int pwm = (int)fabsf(_posOutput);
-        if (pwm < POS_PWM_MIN) pwm = POS_PWM_MIN;
+        int pwm = (int)fabsf(_posOutput) + MOTOR_BIAS;
         if (pwm > POS_PWM_MAX) pwm = POS_PWM_MAX;
 
         if (_posOutput > 0) {
