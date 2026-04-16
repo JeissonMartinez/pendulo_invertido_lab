@@ -88,6 +88,6 @@
 // PWM defaults
 // ══════════════════════════════════════════════════
 #define HOMING_PWM       300
-#define MOTOR_BIAS       300      // PWM mínimo para vencer zona muerta del motor
+#define MOTOR_BIAS       200      // PWM mínimo para vencer zona muerta del motor
 
 #endif // HARDWARE_PINS_H
