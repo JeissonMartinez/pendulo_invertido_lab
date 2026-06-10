@@ -4,10 +4,41 @@
  */
 
 import { defineStore } from 'pinia'
-import { ref, computed } from 'vue'
+import { ref, shallowRef, computed } from 'vue'
 
 // Tamaño del ring buffer: ~60 s a 50 Hz
 const BUFFER_SIZE = 6000
+
+class CircularBuffer {
+  constructor(size) {
+    this.data = new Float64Array(size)
+    this.head = 0
+    this.count = 0
+    this.size = size
+  }
+  push(val) {
+    this.data[this.head] = val
+    this.head = (this.head + 1) % this.size
+    if (this.count < this.size) this.count++
+  }
+  toArray() {
+    if (this.count < this.size) {
+      return this.data.slice(0, this.count)
+    }
+    const result = new Float64Array(this.size)
+    result.set(this.data.subarray(this.head, this.size), 0)
+    result.set(this.data.subarray(0, this.head), this.size - this.head)
+    return result
+  }
+  get length() {
+    return this.count
+  }
+  get last() {
+    if (this.count === 0) return undefined
+    const lastIdx = (this.head - 1 + this.size) % this.size
+    return this.data[lastIdx]
+  }
+}
 
 export const usePendulumStore = defineStore('pendulum', () => {
   // ── Estado de conexión ───────────────────────
@@ -118,57 +149,58 @@ export const usePendulumStore = defineStore('pendulum', () => {
   })
 
   // ── Historial de telemetría (ring buffer) ────
-  const historial = ref({
-    ts: [],
-    angle: [],
-    position: [],
-    pwm: [],
-    cart_accel: [],
-    rpm: [],
+  const historialTicks = ref(0)
+  const historial = shallowRef({
+    ts: new CircularBuffer(BUFFER_SIZE),
+    angle: new CircularBuffer(BUFFER_SIZE),
+    position: new CircularBuffer(BUFFER_SIZE),
+    pwm: new CircularBuffer(BUFFER_SIZE),
+    cart_accel: new CircularBuffer(BUFFER_SIZE),
+    rpm: new CircularBuffer(BUFFER_SIZE),
     // Series extendidas
-    rpm_ir: [],
-    rps_ir: [],
-    pos_ir_cm: [],
-    rpm_mag: [],
-    pos_mag_cm: [],
-    angle_pend: [],
-    angle_pend_unwrap: [],
-    vel_ang_pend: [],
-    mpu_ax: [],
-    mpu_ay: [],
-    mpu_az: [],
-    mpu_pitch: [],
-    mpu_roll: [],
+    rpm_ir: new CircularBuffer(BUFFER_SIZE),
+    rps_ir: new CircularBuffer(BUFFER_SIZE),
+    pos_ir_cm: new CircularBuffer(BUFFER_SIZE),
+    rpm_mag: new CircularBuffer(BUFFER_SIZE),
+    pos_mag_cm: new CircularBuffer(BUFFER_SIZE),
+    angle_pend: new CircularBuffer(BUFFER_SIZE),
+    angle_pend_unwrap: new CircularBuffer(BUFFER_SIZE),
+    vel_ang_pend: new CircularBuffer(BUFFER_SIZE),
+    mpu_ax: new CircularBuffer(BUFFER_SIZE),
+    mpu_ay: new CircularBuffer(BUFFER_SIZE),
+    mpu_az: new CircularBuffer(BUFFER_SIZE),
+    mpu_pitch: new CircularBuffer(BUFFER_SIZE),
+    mpu_roll: new CircularBuffer(BUFFER_SIZE),
     // PID Posición
-    pid_error: [],
-    pid_integral: [],
-    pid_derivada: [],
-    pid_output: [],
-    pid_output_sat: [],
-    pid_setpoint: [],
+    pid_error: new CircularBuffer(BUFFER_SIZE),
+    pid_integral: new CircularBuffer(BUFFER_SIZE),
+    pid_derivada: new CircularBuffer(BUFFER_SIZE),
+    pid_output: new CircularBuffer(BUFFER_SIZE),
+    pid_output_sat: new CircularBuffer(BUFFER_SIZE),
+    pid_setpoint: new CircularBuffer(BUFFER_SIZE),
     // PID Ángulo
-    pida_error: [],
-    pida_integral: [],
-    pida_derivada: [],
-    pida_output: [],
-    pida_output_sat: [],
+    pida_error: new CircularBuffer(BUFFER_SIZE),
+    pida_integral: new CircularBuffer(BUFFER_SIZE),
+    pida_derivada: new CircularBuffer(BUFFER_SIZE),
+    pida_output: new CircularBuffer(BUFFER_SIZE),
+    pida_output_sat: new CircularBuffer(BUFFER_SIZE),
     // PID Posición interno (dentro de PID Ángulo)
-    pida_pos_error: [],
-    pida_pos_output: [],
+    pida_pos_error: new CircularBuffer(BUFFER_SIZE),
+    pida_pos_output: new CircularBuffer(BUFFER_SIZE),
     // PID Cascada - lazo externo (posición)
-    pidc_pos_error: [],
-    pidc_pos_integral: [],
-    pidc_pos_derivada: [],
-    pidc_pos_output: [],
-    pidc_pos_output_sat: [],
-    pidc_pos_setpoint: [],
+    pidc_pos_error: new CircularBuffer(BUFFER_SIZE),
+    pidc_pos_integral: new CircularBuffer(BUFFER_SIZE),
+    pidc_pos_derivada: new CircularBuffer(BUFFER_SIZE),
+    pidc_pos_output: new CircularBuffer(BUFFER_SIZE),
+    pidc_pos_output_sat: new CircularBuffer(BUFFER_SIZE),
+    pidc_pos_setpoint: new CircularBuffer(BUFFER_SIZE),
     // PID Cascada - lazo interno (ángulo)
-    pidc_ang_error: [],
-    pidc_ang_integral: [],
-    pidc_ang_derivada: [],
-    pidc_ang_output: [],
-    pidc_ang_output_sat: [],
-    pidc_ang_setpoint: [],
+    pidc_ang_error: new CircularBuffer(BUFFER_SIZE),
+    pidc_ang_integral: new CircularBuffer(BUFFER_SIZE),
+    pidc_ang_derivada: new CircularBuffer(BUFFER_SIZE),
+    pidc_ang_output: new CircularBuffer(BUFFER_SIZE),
+    pidc_ang_output_sat: new CircularBuffer(BUFFER_SIZE),
+    pidc_ang_setpoint: new CircularBuffer(BUFFER_SIZE),
   })
 
   // ── Navegación multi-experimento ─────────────
@@ -260,6 +292,19 @@ export const usePendulumStore = defineStore('pendulum', () => {
   }
 
   // ── Procesamiento de mensajes entrantes ──────
+  function procesarLote(batch) {
+    let actualizarHistorial = false
+    for (const mensaje of batch) {
+      procesarMensaje(mensaje)
+      if (mensaje.tipo === 'telemetria') {
+        actualizarHistorial = true
+      }
+    }
+    if (actualizarHistorial) {
+      triggerRef(historial)
+    }
+  }
+
   // ── Mapeo de nombres firmware → frontend ────
   const DIRECTION_MAP = { 1: 'ADELANTE', '-1': 'ATRAS', 0: 'DETENIDO' }
 
@@ -505,6 +550,8 @@ export const usePendulumStore = defineStore('pendulum', () => {
     const h = historial.value
     const ahora = Date.now()
 
+    historialTicks.value++
+
     h.ts.push(ahora)
     h.angle.push(datos.angle ?? 0)
     h.position.push(datos.position ?? 45.0)
@@ -525,7 +572,7 @@ export const usePendulumStore = defineStore('pendulum', () => {
     if (prevArr.length === 0) {
       prevArr.push(rawAngle)
     } else {
-      const prev = prevArr[prevArr.length - 1]
+      const prev = prevArr.last
       let diff = rawAngle - (((prev % 360) + 360) % 360)
       if (diff > 180) diff -= 360
       if (diff < -180) diff += 360
@@ -568,14 +615,6 @@ export const usePendulumStore = defineStore('pendulum', () => {
     h.pidc_ang_output.push(datos.pidc_ang_output ?? 0)
     h.pidc_ang_output_sat.push(datos.pidc_ang_output_sat ?? 0)
     h.pidc_ang_setpoint.push(datos.pidc_ang_setpoint ?? 0)
-
-    // Recortar al tamaño máximo
-    if (h.ts.length > BUFFER_SIZE) {
-      const exceso = h.ts.length - BUFFER_SIZE
-      for (const key of Object.keys(h)) {
-        h[key].splice(0, exceso)
-      }
-    }
 
     // Si está en modo OPEN_LOOP, agregar a resultados
     if (datos.modo === 'OPEN_LOOP' || experimentoActivo.value === 'lazo_abierto') {
@@ -813,6 +852,7 @@ export const usePendulumStore = defineStore('pendulum', () => {
     telemetria,
     estado,
     historial,
+    historialTicks,
     // Navegación
     experimentoActivo,
     // Sweep
@@ -836,6 +876,7 @@ export const usePendulumStore = defineStore('pendulum', () => {
     estaCalibracionCompleta,
     // Actions
     setWsSend,
+    procesarLote,
     procesarMensaje,
     enviarComando,
     pararEmergencia,

@@ -36,14 +36,33 @@ export function useWebSocket() {
       })
     }
 
+    let _pendingMessages = []
+    let _rafId = null
+
     ws.onmessage = (evento) => {
       try {
         const mensaje = JSON.parse(evento.data)
-        store.procesarMensaje(mensaje)
+        _pendingMessages.push(mensaje)
 
-        // Estimar latencia desde timestamp de telemetría
-        if (mensaje.tipo === 'telemetria' && mensaje.datos.ts) {
-          latencia.value = Date.now() % 100  // placeholder visual
+        if (!_rafId) {
+          _rafId = requestAnimationFrame(() => {
+            _rafId = null
+            const batch = _pendingMessages
+            _pendingMessages = []
+
+            // Procesar lote
+            if (store.procesarLote) {
+              store.procesarLote(batch)
+            } else {
+              batch.forEach(m => store.procesarMensaje(m))
+            }
+
+            // Estimar latencia con el último mensaje de telemetría del batch
+            const lastTelem = batch.findLast(m => m.tipo === 'telemetria' && m.datos?.ts)
+            if (lastTelem) {
+              latencia.value = Date.now() % 100  // placeholder visual
+            }
+          })
         }
       } catch {
         // mensaje no-JSON, ignorar

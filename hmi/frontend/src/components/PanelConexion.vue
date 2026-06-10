@@ -69,7 +69,7 @@ const esp32Online = computed(() => {
   tick.value  // dependencia reactiva para re-evaluar
   const h = store.historial.ts
   if (h.length === 0) return false
-  return (Date.now() - h[h.length - 1]) < 5000
+  return (Date.now() - h.last) < 5000
 })
 
 const esp32Title = computed(() => {

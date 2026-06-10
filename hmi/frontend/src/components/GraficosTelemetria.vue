@@ -382,7 +382,7 @@ function destruirPlot(id) {
 
 // ── Actualización de datos ───────────────────
 let rafId = null
-let _lastLen = 0
+let _lastTick = -1
 
 function solicitarActualizacion() {
   if (rafId) return
@@ -393,23 +393,28 @@ function solicitarActualizacion() {
 }
 
 function actualizarGraficos() {
+  const currentTick = store.historialTicks
+  if (currentTick === 0) return
+  if (currentTick === _lastTick) return   // sin datos nuevos → skip
+  _lastTick = currentTick
+
   const h = store.historial
   const len = h.ts.length
   if (len === 0) return
-  if (len === _lastLen) return   // sin datos nuevos → skip
-  _lastLen = len
 
+  const tsArray = h.ts.toArray()
+  
   // Aplicar ventana de tiempo
   let startIdx = 0
   const ventana = ventanaSeleccionada.value
   if (ventana > 0) {
     const cutoff = Date.now() - ventana * 1000
-    startIdx = h.ts.findIndex(t => t >= cutoff)
-    if (startIdx < 0) startIdx = h.ts.length
+    startIdx = tsArray.findIndex(t => t >= cutoff)
+    if (startIdx < 0) startIdx = tsArray.length
   }
 
   // Convertir timestamps a segundos (solo ventana visible)
-  const tsSegs = h.ts.slice(startIdx).map(t => t / 1000)
+  const tsSegs = tsArray.slice(startIdx).map(t => t / 1000)
 
   for (const grafico of graficos) {
     const plot = plotMap[grafico.id]
@@ -421,7 +426,7 @@ function actualizarGraficos() {
     for (const s of grafico.series) {
       const valores = h[s.key]
       if (valores) {
-        data.push(valores.slice(startIdx))
+        data.push(valores.toArray().slice(startIdx))
       } else {
         data.push([])
       }
@@ -465,7 +470,7 @@ function desobservarCanvas(id) {
 onMounted(() => {
   resizeObserver = new ResizeObserver(manejarResize)
   // Solicitar redibujado cuando el historial cambia
-  watch(() => store.historial.ts.length, solicitarActualizacion)
+  watch(() => store.historialTicks, solicitarActualizacion)
 })
 
 onUnmounted(() => {
@@ -500,7 +505,7 @@ watch(graficosVisibles, async () => {
 }, { deep: true })
 
 // Inicializar plots al primer render
-watch(() => store.historial.ts.length, async (len) => {
+watch(() => store.historialTicks, async (len) => {
   if (len > 0) {
     await nextTick()
     for (const g of graficosVisibles.value) {
