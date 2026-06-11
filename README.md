@@ -91,7 +91,7 @@ El sistema permite:
 | Encoder ángulo | AS5600 magnético absoluto 12-bit | I2C Bus 0 (0x36) |
 | Encoder posición | AS5600 magnético multi-vuelta | I2C Bus 1 (0x36) |
 | Encoder IR (motor) | HC-020K (opción para posición) | GPIO 16 |
-| Pantalla | OLED SSD1306 128×64 | I2C Bus 0 (0x3C) |
+| Pantalla | OLED SSD1306 128×64 | I2C Bus 1 (0x3C) |
 | Limit switches | XV-152-1C25 × 2 (NC + Pull-Up) | GPIO 32, 33 |
 | IMU (opcional) | MPU6050 | I2C Bus 0 (0x68) |
 
@@ -144,7 +144,9 @@ pendulo_invertido/
 │       │   ├── lazo_abierto_mode.h/cpp
 │       │   ├── rango_pwm_mode.h/cpp
 │       │   ├── pid_posicion_mode.h/cpp
-│       │   └── pid_angulo_mode.h/cpp
+│       │   ├── pid_angulo_mode.h/cpp
+│       │   └── pid_cascada_mode.h/cpp
+│       ├── main.cpp                # Orquestador dual-core
 │       ├── motor_control.cpp       # Implementación motor
 │       ├── sensors_i2c.cpp         # Lectura de sensores
 │       ├── encoder_ir.cpp          # Encoder infrarrojo
@@ -152,6 +154,7 @@ pendulo_invertido/
 │       ├── mqtt_comm.cpp           # Publicación MQTT
 │       ├── display_oled.cpp        # Renderizado OLED
 │       ├── safety.cpp              # Lógica de seguridad
+│       ├── neural_control.cpp      # Control neuronal (experimental)
 │       └── time_sync.cpp           # Sincronización NTP
 │
 ├── hmi/                            # Interfaz HMI Web
@@ -188,12 +191,18 @@ pendulo_invertido/
 ├── docs/                           # Documentación técnica
 │   ├── plan_mejoras.md             # Plan de fases de desarrollo
 │   ├── control_pid_posicion.md     # Documentación del PID posición
+│   ├── control_pid_angulo.md       # Documentación del PID ángulo
+│   ├── control_pid_cascada.md      # Documentación del PID cascada
 │   ├── calibracion_posicion_ir.md  # Calibración encoder IR
 │   ├── calibracion_posicion_mag.md # Calibración encoder magnético
 │   ├── config_dual_core.md         # Arquitectura dual-core
-│   └── plan_dual_core.md           # Plan de implementación dual-core
+│   ├── plan_dual_core.md           # Plan de implementación dual-core
+│   ├── plan_pipeline_telemetria.md # Arquitectura del pipeline de telemetría
+│   ├── plan_wifi_ap.md             # Plan para modo WiFi AP
+│   └── DeepResearch_ProblemaDeEncoder_IR.pdf  # Investigación técnica encoder IR
 │
-├── datas/                          # Datos de experimentos (CSVs)
+├── datas/                          # Datos de experimentos (29+ CSVs)
+├── logs/                           # Logs de resultados de experimentos (.md)
 └── img/                            # Fotos y esquemas del prototipo
 ```
 
@@ -213,9 +222,18 @@ pendulo_invertido/
 
 ## Instalación
 
-Todos los comandos desde la raíz del proyecto.
+Todos los comandos desde la raíz del proyecto. Se requiere tener instalados Python 3.10+, Node.js 18+ y Mosquitto 2.x.
 
-### 1. Broker MQTT
+### 1. Clonar el repositorio
+
+```bash
+git clone <URL_DEL_REPOSITORIO>
+cd pendulo_invertido
+```
+
+### 2. Broker MQTT
+
+Mosquitto es el bus de mensajes central del sistema. Todos los nodos (ESP32, backend, frontend) se comunican a través de él, por lo que debe estar corriendo antes que cualquier otro componente.
 
 ```bash
 # macOS
@@ -225,85 +243,161 @@ brew install mosquitto
 sudo apt install mosquitto mosquitto-clients
 ```
 
-### 2. Backend Python
+### 3. Entorno Python
+
+El directorio `cenv/` contiene un entorno Conda preconfigurado con todas las dependencias Python (FastAPI, aiomqtt, aiosqlite, PlatformIO, etc.). Si prefieres no usarlo, crea tu propio entorno virtual e instala las dependencias manualmente.
+
+```bash
+# Opción A — Usar el entorno preconfigurado (recomendado)
+# El entorno ya está listo; los pasos siguientes lo usan directamente.
+
+# Opción B — Crear entorno manual
+python -m venv .venv && source .venv/bin/activate
+pip install -r hmi/backend/requirements.txt
+```
+
+### 4. Backend Python
+
+Instala las dependencias del servidor FastAPI (solo necesario si no usas `cenv/` o al actualizar el proyecto):
 
 ```bash
 ./cenv/bin/pip install -r hmi/backend/requirements.txt
 ```
 
-### 3. Frontend Vue.js
+Las dependencias principales son: `fastapi`, `uvicorn`, `aiomqtt`, `aiosqlite`, `pydantic`, `orjson`.
+
+### 5. Frontend Vue.js
+
+Instala los paquetes npm del frontend (Node.js 18+ requerido):
 
 ```bash
 cd hmi/frontend && npm install
 ```
 
-### 4. PlatformIO (solo si compilas firmware)
+Esto descarga Vue.js 3.5, Pinia, uPlot y Vite. Solo es necesario la primera vez o al actualizar `package.json`.
+
+### 6. PlatformIO (solo si compilas firmware)
+
+PlatformIO gestiona el toolchain de compilación y flasheo del ESP32. Solo es necesario si vas a trabajar con el firmware:
 
 ```bash
 ./cenv/bin/pip install platformio
 ```
 
-### 5. Credenciales WiFi (solo firmware real)
+### 7. Credenciales WiFi (solo firmware real)
 
-Crear/editar `SPISC/include/wifi_mqtt_config.h`:
+El archivo de credenciales **no está versionado** (está en `.gitignore`) para evitar exponer datos sensibles. Debes crearlo manualmente antes de compilar:
+
+```bash
+# Crear el archivo de credenciales
+cp SPISC/include/wifi_mqtt_config.h.example SPISC/include/wifi_mqtt_config.h
+# Luego editar con tus datos reales
+```
+
+Contenido del archivo:
 
 ```c
 #define WIFI_SSID       "TU_RED_WIFI"
 #define WIFI_PASSWORD   "TU_CONTRASEÑA"
-#define MQTT_BROKER     "IP_DE_TU_PC"
+#define MQTT_BROKER     "IP_DE_TU_PC"   // IP local de la máquina con el broker
 #define MQTT_PORT       1883
+```
+
+### 8. Verificación
+
+Para comprobar que todo está listo antes de arrancar:
+
+```bash
+# Verificar broker (debe iniciar sin errores)
+mosquitto -c hmi/mosquitto/mosquitto.conf -v
+
+# Verificar backend (debe responder en :8000)
+./cenv/bin/uvicorn hmi.backend.app:app --port 8000
+# → Abrir http://localhost:8000/docs
+
+# Verificar frontend (debe compilar sin errores)
+cd hmi/frontend && npm run build
 ```
 
 ---
 
 ## Guía de uso rápido
 
-Se necesitan **3 terminales** (4 si se usa el mock). Todas desde la raíz del proyecto.
+El sistema puede operar en dos modos: con el **hardware real** (ESP32 conectado por WiFi) o con el **simulador mock** (modelo físico por software, sin necesidad de hardware). Ambos flujos requieren el broker, el backend y el frontend.
+
+> **Orden de arranque importante:** el broker MQTT debe estar corriendo antes que el backend, ya que este se conecta a él al iniciar. El frontend puede arrancar en cualquier momento.
+
+### Flujo A — Con hardware real (ESP32)
+
+Se necesitan **3 terminales**. Todas desde la raíz del proyecto.
 
 ```bash
-# Terminal 1 — Broker MQTT
-mosquitto -c hmi/mosquitto/mosquitto.conf -d
+# Terminal 1 — Broker MQTT (arrancar primero)
+mosquitto -c hmi/mosquitto/mosquitto.conf -v
+# Queda escuchando en :1883. Los mensajes aparecen en pantalla para debug.
 
-# Terminal 2 — Backend
+# Terminal 2 — Backend FastAPI
 ./cenv/bin/uvicorn hmi.backend.app:app --host 0.0.0.0 --port 8000
+# API REST en :8000, WebSocket en ws://localhost:8000/ws
 
-# Terminal 3 — Frontend
+# Terminal 3 — Frontend Vue.js
 cd hmi/frontend && npm run dev
-
-# Terminal 4 (opcional) — Mock (reemplaza al ESP32)
-./cenv/bin/python -m hmi.mock.simulador_pendulo
+# UI disponible en http://localhost:5173
 ```
 
-Abrir **http://localhost:5173** en el navegador.
+Luego, con el ESP32 ya flasheado y conectado a la misma red WiFi, al encenderlo se conectará automáticamente al broker. La HMI mostrará el indicador de **ESP32 conectado** y la telemetría comenzará a fluir.
 
-### Compilar y flashear firmware
+Para compilar y flashear el firmware al ESP32:
 
 ```bash
 cd SPISC
 
-# Barrido de rango PWM
-../cenv/bin/pio run -e rango_pwm -t upload
-
-# Test de conectividad WiFi+MQTT
+# Test de conectividad WiFi+MQTT (útil para verificar credenciales)
 ../cenv/bin/pio run -e test_connectivity -t upload
 
-# Firmware principal
+# Firmware principal (todos los modos de control)
 ../cenv/bin/pio run -e esp32dev -t upload
+
+# Barrido de rango PWM (standalone, sin HMI)
+../cenv/bin/pio run -e rango_pwm -t upload
 ```
+
+### Flujo B — Sin hardware (modo mock/simulador)
+
+El simulador replica el comportamiento físico del péndulo mediante un modelo matemático. Ideal para desarrollo y pruebas de la HMI sin necesitar el prototipo físico.
+
+Se necesitan **4 terminales**:
+
+```bash
+# Terminal 1 — Broker MQTT
+mosquitto -c hmi/mosquitto/mosquitto.conf -v
+
+# Terminal 2 — Backend FastAPI
+./cenv/bin/uvicorn hmi.backend.app:app --host 0.0.0.0 --port 8000
+
+# Terminal 3 — Frontend Vue.js
+cd hmi/frontend && npm run dev
+
+# Terminal 4 — Simulador físico (reemplaza al ESP32)
+./cenv/bin/python -m hmi.mock.simulador_pendulo
+# Publica telemetría simulada en los mismos tópicos MQTT que el ESP32 real.
+```
+
+Abrir **http://localhost:5173** en el navegador.
 
 ### Comandos útiles
 
 ```bash
-# Debug MQTT en tiempo real
+# Monitorear todos los mensajes MQTT en tiempo real
 mosquitto_sub -t "pendulum/#" -v
 
-# Estado del sistema vía API
+# Consultar el estado actual del sistema vía API REST
 curl -s http://localhost:8000/api/estado | python3 -m json.tool
 
-# Documentación Swagger
-# http://localhost:8000/docs
+# Explorar todos los endpoints disponibles (Swagger UI)
+# → http://localhost:8000/docs
 
-# Apagar servicios
+# Apagar todos los servicios en background
 pkill mosquitto; pkill -f uvicorn
 ```
 
@@ -329,15 +423,20 @@ pkill mosquitto; pkill -f uvicorn
 - **Telemetría en tiempo real** con gráficos uPlot (~50 Hz)
 - **Animación SVG** del carro + péndulo + pista + limit switches
 - **Panel de conexión** con indicadores WS / MQTT / ESP32
-- **Navegación por tabs** para diferentes experimentos:
-  - **Barrido PWM:** Caracterización del rango operativo con tabla de resultados
-  - **Lazo Abierto:** Movimientos controlados con homing automático
-  - **PID Posición:** Control de posición con configuración de ganancias en vivo
-  - **PID Ángulo:** Estabilización vertical del péndulo con telemetría PID extendida
 - **Parada de emergencia** desde cualquier pantalla
-- **Editor de parámetros** para configuración dinámica del controlador
+- **Editor de parámetros** para configuración dinámica del controlador (Kp, Ki, Kd, setpoints)
 - **Exportación CSV** de datos experimentales
 - **Modo mock** con simulador de física para desarrollo sin hardware
+
+### Pestañas de experimentos
+
+| Tab | Descripción |
+|-----|-------------|
+| **Barrido PWM** | Barrido automático e incremental del rango operativo del motor (200–700 PWM). Genera una tabla de respuesta para caracterizar la zona muerta y el comportamiento dinámico. |
+| **Lazo Abierto** | Control PWM directo sin realimentación. Permite enviar comandos de movimiento manuales y verificar la respuesta del motor. Incluye homing automático al inicio. |
+| **PID Posición** | PID discreto para posicionar el carro en la pista. Ganancias Kp, Ki, Kd configurables en vivo. Sensor seleccionable: encoder magnético AS5600 o encoder IR HC-020K. |
+| **PID Ángulo** | PID para estabilizar el péndulo en posición vertical (0°). Incluye pre-posicionamiento automático del carro y telemetría extendida del error, integral y derivada. |
+| **PID Cascada** | Control de doble lazo: el lazo exterior controla el ángulo y genera el setpoint de posición para el lazo interior. Estrategia más avanzada para el equilibrio completo del péndulo. |
 
 > La documentación completa del HMI está en [`hmi/README.md`](hmi/README.md).
 
@@ -397,6 +496,7 @@ El sistema utiliza una arquitectura modular (Strategy pattern) para soportar mú
 | **Barrido PWM** | `MODE_SWEEP_PWM` | Caracterización del rango operativo del motor | ✅ Completo |
 | **PID Posición** | `MODE_PID_POS` | Control PID discreto para posicionar el carro | ✅ Completo |
 | **PID Ángulo** | `MODE_PID_ANG` | PID de ángulo para estabilización vertical del péndulo | ✅ Completo |
+| **PID Cascada** | `MODE_PID_CASCADE` | Doble lazo (ángulo + posición) para equilibrio completo | ✅ Completo |
 | **Idle** | `MODE_IDLE` | Estado de reposo, motor detenido | ✅ Completo |
 
 ### Modos planificados
@@ -404,7 +504,6 @@ El sistema utiliza una arquitectura modular (Strategy pattern) para soportar mú
 | Modo | Enum | Descripción |
 |---|---|---|
 | **Manual** | `MODE_MANUAL` | Control directo de PWM desde la HMI |
-| **PID Cascada** | `MODE_PID` | Lazo exterior (posición) + lazo interior (ángulo) para equilibrio completo |
 | **Red Neuronal FF** | `MODE_NEURAL` | Red 3→3→1 con entrenamiento online |
 | **SMC** | `MODE_SMC` | Régimen deslizante — robusto ante perturbaciones |
 | **LQR** | `MODE_LQR` | Regulador cuadrático lineal — control óptimo |
@@ -440,6 +539,21 @@ El sistema utiliza una arquitectura modular (Strategy pattern) para soportar mú
 
 > Documentación detallada en [`docs/control_pid_angulo.md`](docs/control_pid_angulo.md)
 
+### Características del PID Cascada
+
+- Frecuencia de control: 1000 Hz en ambos lazos (Core 0)
+- Lazo exterior: PID de ángulo → genera setpoint de posición dinámico para el lazo interior
+- Lazo interior: PID de posición → controla el PWM del motor para seguir el setpoint de ángulo
+- Pre-posicionamiento automático del carro al centro de la pista antes de activar el balance
+- Transición automática por máquina de estados: IDLE → HOMING → PREPOSITIONING → READY → ACTIVE → STOPPED
+- Límites direccionales configurables para confinar el carro dentro de la zona de balance
+- Tolerancia de posición configurable para el retorno automático al centro tras salir del balance
+- Anti-windup en ambos lazos con saturación de integral independiente
+- Telemetría extendida con campos de ambos controladores: `pid_*` (posición) y `pida_*` (ángulo)
+- Configuración dinámica de todas las ganancias y parámetros vía MQTT
+
+> Documentación detallada en [`docs/control_pid_cascada.md`](docs/control_pid_cascada.md)
+
 ---
 
 ## Documentación
@@ -448,12 +562,15 @@ El sistema utiliza una arquitectura modular (Strategy pattern) para soportar mú
 |---|---|
 | [`docs/control_pid_posicion.md`](docs/control_pid_posicion.md) | Documentación completa del modo PID Posición |
 | [`docs/control_pid_angulo.md`](docs/control_pid_angulo.md) | Documentación completa del modo PID Ángulo |
+| [`docs/control_pid_cascada.md`](docs/control_pid_cascada.md) | Documentación completa del modo PID Cascada |
 | [`docs/calibracion_posicion_ir.md`](docs/calibracion_posicion_ir.md) | Calibración del encoder infrarrojo HC-020K |
 | [`docs/calibracion_posicion_mag.md`](docs/calibracion_posicion_mag.md) | Calibración del encoder magnético AS5600 |
 | [`docs/config_dual_core.md`](docs/config_dual_core.md) | Configuración de la arquitectura dual-core |
 | [`docs/plan_dual_core.md`](docs/plan_dual_core.md) | Plan de implementación dual-core |
+| [`docs/plan_pipeline_telemetria.md`](docs/plan_pipeline_telemetria.md) | Arquitectura del pipeline de telemetría (ESP32 → MQTT → Backend → WS → Frontend) |
 | [`docs/plan_mejoras.md`](docs/plan_mejoras.md) | Roadmap general del proyecto |
 | [`docs/plan_wifi_ap.md`](docs/plan_wifi_ap.md) | Plan para modo AP del WiFi |
+| [`docs/DeepResearch_ProblemaDeEncoder_IR.pdf`](docs/DeepResearch_ProblemaDeEncoder_IR.pdf) | Investigación técnica sobre el problema del encoder IR HC-020K |
 | [`hmi/README.md`](hmi/README.md) | Documentación completa del HMI Web |
 
 ---
@@ -469,7 +586,7 @@ El sistema utiliza una arquitectura modular (Strategy pattern) para soportar mú
 | **5** | Arquitectura dual-core ESP32 (Core 0: control, Core 1: comunicación) | ✅ Completado |
 | **6** | Control PID de Posición con telemetría extendida | ✅ Completado |
 | **7** | Control PID de Ángulo con bias de motor y pre-posicionamiento | ✅ Completado |
-| **8** | Control PID Cascada (ángulo + posición) para equilibrio completo | En progreso |
+| **8** | Control PID Cascada (ángulo + posición) para equilibrio completo | ✅ Completado |
 | **9** | Controladores avanzados (SMC, LQR, MPC) | Planificado |
 | **10** | Red neuronal con entrenamiento online | Planificado |
 
@@ -484,5 +601,5 @@ Proyecto académico de ingeniería. Consultar con el autor para uso o distribuci
 ---
 
 <p align="center">
-  <sub>Ing. Jeisson Martinez — Abril 2026</sub>
+  <sub>Ing. Jeisson Martinez — Junio 2026</sub>
 </p>

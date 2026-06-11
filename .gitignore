@@ -28,5 +28,7 @@ hmi/frontend/dist/
 # ── Logs ──────────────────────────────────────────
 *.log
 
-# ── GITHUB Agents ──────────────────────────────────────────
+# ── Agents and Enviroment ─────────────────────────
 .github
+.claude
+.vscode
